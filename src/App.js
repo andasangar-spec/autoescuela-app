@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import { HashRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { GoogleOAuthProvider } from "@react-oauth/google";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
@@ -17,15 +17,18 @@ function App() {
     const guardado = localStorage.getItem("usuario");
     return guardado ? JSON.parse(guardado) : null;
   });
+
   const handleLogin = (datosUsuario) => {
     localStorage.setItem("usuario", JSON.stringify(datosUsuario));
     setUsuario(datosUsuario);
   };
+
   const handleLogout = () => {
     localStorage.removeItem("usuario");
     localStorage.removeItem("google_token");
     setUsuario(null);
   };
+
   return (
     <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
       <Router>
