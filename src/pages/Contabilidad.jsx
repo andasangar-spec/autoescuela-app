@@ -1,18 +1,24 @@
 import React, { useEffect, useState } from "react";
 import { getSesiones, getPagos, guardarPago, generarId } from "../services/googleApi";
-import { format, parse, isValid } from "date-fns";
+import { format, parseISO, isWithinInterval, startOfDay, endOfDay, isValid } from "date-fns";
 
-// Convierte número de serie de Excel/Sheets a fecha legible
+// Convierte número serial de Sheets a fecha legible
 const formatearFecha = (valor) => {
   if (!valor) return "—";
-  // Si ya es string con formato dd/mm/yyyy
   if (typeof valor === "string" && valor.includes("/")) return valor;
-  // Si es número (formato serial de Sheets)
   if (!isNaN(valor)) {
     const fecha = new Date((parseFloat(valor) - 25569) * 86400 * 1000);
     if (isValid(fecha)) return format(fecha, "dd/MM/yyyy");
   }
   return valor;
+};
+
+// Parsear fecha dd/MM/yyyy a Date
+const parsearFecha = (fechaStr) => {
+  if (!fechaStr) return null;
+  const partes = fechaStr.split("/");
+  if (partes.length !== 3) return null;
+  return new Date(parseInt(partes[2]), parseInt(partes[1]) - 1, parseInt(partes[0]));
 };
 
 function Contabilidad() {
@@ -22,8 +28,14 @@ function Contabilidad() {
   const [guardando, setGuardando] = useState(false);
   const [error, setError]         = useState("");
   const [exito, setExito]         = useState("");
+  const [filtro, setFiltro]       = useState("año");
   const [añoSelec, setAñoSelec]   = useState(new Date().getFullYear());
-  const [mesSelec, setMesSelec]   = useState(0); // 0 = todos los meses
+  const [mesSelec, setMesSelec]   = useState(new Date().getMonth() + 1);
+  const [fechaDesde, setFechaDesde] = useState("");
+  const [fechaHasta, setFechaHasta] = useState("");
+
+  const meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
+                  "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 
   const [formPago, setFormPago] = useState({
     fecha:    format(new Date(), "yyyy-MM-dd"),
@@ -31,9 +43,6 @@ function Contabilidad() {
     concepto: "",
     notas:    "",
   });
-
-  const meses = ["Todos","Enero","Febrero","Marzo","Abril","Mayo","Junio",
-                  "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 
   useEffect(() => { cargarDatos(); }, []);
 
@@ -50,14 +59,31 @@ function Contabilidad() {
     }
   };
 
-  const filtrarDatos = (lista) => lista.filter(x => {
-    const coincideAño = parseInt(x.año) === añoSelec;
-    const coincideMes = mesSelec === 0 || parseInt(x.mes) === mesSelec;
-    return coincideAño && coincideMes;
+  // ── Aplicar filtro ───────────────────────────────────────
+  const aplicarFiltro = (lista) => lista.filter(x => {
+    if (filtro === "año") {
+      return parseInt(x.año) === añoSelec;
+    }
+    if (filtro === "mes") {
+      return parseInt(x.mes) === mesSelec && parseInt(x.año) === añoSelec;
+    }
+    if (filtro === "rango") {
+      if (!fechaDesde || !fechaHasta) return true;
+      const fecha = parsearFecha(formatearFecha(x.fecha));
+      if (!fecha) return false;
+      return isWithinInterval(startOfDay(fecha), {
+        start: startOfDay(parseISO(fechaDesde)),
+        end:   endOfDay(parseISO(fechaHasta)),
+      });
+    }
+    return true;
   });
 
-  const totalGenerado  = filtrarDatos(sesiones).reduce((acc, s) => acc + (parseFloat(s.precioTotal) || 0), 0);
-  const totalCobrado   = filtrarDatos(pagos).reduce((acc, p) => acc + (parseFloat(p.importe) || 0), 0);
+  const sesionesFiltradas = aplicarFiltro(sesiones);
+  const pagosFiltrados    = aplicarFiltro(pagos);
+
+  const totalGenerado  = sesionesFiltradas.reduce((acc, s) => acc + (parseFloat(s.precioTotal) || 0), 0);
+  const totalCobrado   = pagosFiltrados.reduce((acc, p) => acc + (parseFloat(p.importe) || 0), 0);
   const totalPendiente = totalGenerado - totalCobrado;
 
   const formatEur = n => `${parseFloat(n).toFixed(2).replace(".", ",")} €`;
@@ -93,28 +119,80 @@ function Contabilidad() {
 
   if (cargando) return <div className="loading"><div className="spinner"></div> Cargando...</div>;
 
-  const pagosAño = filtrarDatos(pagos).sort((a, b) => b.fecha.localeCompare(a.fecha));
+  const pagosOrdenados = pagosFiltrados.sort((a, b) => {
+    const fa = parsearFecha(formatearFecha(a.fecha));
+    const fb = parsearFecha(formatearFecha(b.fecha));
+    if (!fa || !fb) return 0;
+    return fb - fa;
+  });
 
   return (
     <div>
       <div className="page-header">
         <h1>💰 Contabilidad</h1>
-        <div style={{ display:"flex", gap:"8px" }}>
-          <select className="form-control" style={{ width:"auto" }} value={mesSelec}
-            onChange={e => setMesSelec(parseInt(e.target.value))}>
-            {meses.map((m, i) => <option key={i} value={i}>{m}</option>)}
-          </select>
-          <select className="form-control" style={{ width:"auto" }} value={añoSelec}
-            onChange={e => setAñoSelec(parseInt(e.target.value))}>
-            {[2024,2025,2026,2027].map(a => <option key={a} value={a}>{a}</option>)}
-          </select>
-        </div>
+        <button className="btn btn-outline" onClick={cargarDatos}>🔄 Actualizar</button>
       </div>
 
       {error && <div className="alerta alerta-error">{error}</div>}
       {exito && <div className="alerta alerta-success">{exito}</div>}
 
-      {/* Resumen */}
+      {/* ── Filtros ─────────────────────────────────────── */}
+      <div className="card">
+        <div style={{ display:"flex", gap:"8px", flexWrap:"wrap", marginBottom:"16px" }}>
+          {[
+            { key:"año",   label:"Año completo" },
+            { key:"mes",   label:"Por mes" },
+            { key:"rango", label:"📅 Rango de fechas" },
+          ].map(f => (
+            <button
+              key={f.key}
+              className={`btn ${filtro === f.key ? "btn-primary" : "btn-outline"}`}
+              onClick={() => setFiltro(f.key)}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ display:"flex", gap:"12px", flexWrap:"wrap", alignItems:"center" }}>
+          {filtro === "año" && (
+            <select className="form-control" style={{ width:"auto" }}
+              value={añoSelec} onChange={e => setAñoSelec(parseInt(e.target.value))}>
+              {[2024,2025,2026,2027].map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+          )}
+
+          {filtro === "mes" && (
+            <>
+              <select className="form-control" style={{ width:"auto" }}
+                value={mesSelec} onChange={e => setMesSelec(parseInt(e.target.value))}>
+                {meses.map((m, i) => <option key={i} value={i+1}>{m}</option>)}
+              </select>
+              <select className="form-control" style={{ width:"auto" }}
+                value={añoSelec} onChange={e => setAñoSelec(parseInt(e.target.value))}>
+                {[2024,2025,2026,2027].map(a => <option key={a} value={a}>{a}</option>)}
+              </select>
+            </>
+          )}
+
+          {filtro === "rango" && (
+            <>
+              <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
+                <label style={{ fontSize:"13px", fontWeight:"600", color:"#5f6368" }}>Desde:</label>
+                <input type="date" className="form-control" style={{ width:"auto" }}
+                  value={fechaDesde} onChange={e => setFechaDesde(e.target.value)} />
+              </div>
+              <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
+                <label style={{ fontSize:"13px", fontWeight:"600", color:"#5f6368" }}>Hasta:</label>
+                <input type="date" className="form-control" style={{ width:"auto" }}
+                  value={fechaHasta} onChange={e => setFechaHasta(e.target.value)} />
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* ── Resumen ─────────────────────────────────────── */}
       <div className="stats-grid">
         <div className="stat-card">
           <div className="stat-icon">📈</div>
@@ -133,7 +211,7 @@ function Contabilidad() {
         </div>
       </div>
 
-      {/* Barra progreso */}
+      {/* ── Barra progreso ──────────────────────────────── */}
       <div className="card">
         <div className="card-title">📊 Progreso de cobro</div>
         <div style={{ marginBottom:"8px", display:"flex", justifyContent:"space-between", fontSize:"13px", color:"#666" }}>
@@ -154,7 +232,7 @@ function Contabilidad() {
         </div>
       </div>
 
-      {/* Registrar pago */}
+      {/* ── Registrar pago ──────────────────────────────── */}
       <div className="card">
         <div className="card-title">💵 Registrar nuevo pago</div>
         <div className="form-row">
@@ -191,10 +269,10 @@ function Contabilidad() {
         </button>
       </div>
 
-      {/* Historial */}
+      {/* ── Historial de pagos ───────────────────────────── */}
       <div className="card">
         <div className="card-title">🧾 Historial de pagos</div>
-        {pagosAño.length === 0 ? (
+        {pagosOrdenados.length === 0 ? (
           <p style={{ textAlign:"center", color:"#999", padding:"24px" }}>
             No hay pagos en este período
           </p>
@@ -205,7 +283,7 @@ function Contabilidad() {
                 <tr><th>Fecha</th><th>Concepto</th><th>Importe</th><th>Notas</th></tr>
               </thead>
               <tbody>
-                {pagosAño.map((p, i) => (
+                {pagosOrdenados.map((p, i) => (
                   <tr key={i}>
                     <td>{formatearFecha(p.fecha)}</td>
                     <td>{p.concepto}</td>

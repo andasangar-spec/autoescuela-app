@@ -8,7 +8,6 @@ const headers  = () => ({
   "Content-Type":  "application/json",
 });
 
-// Limpia valores numéricos que vienen de Sheets con formato moneda
 const limpiarNumero = (v) => {
   if (v === undefined || v === null || v === "") return 0;
   const limpio = String(v).replace(/[€$\s]/g, "").replace(",", ".");
@@ -49,6 +48,39 @@ export async function añadirFila(hoja, valores) {
   return res.json();
 }
 
+// ── Obtener ID interno de hoja ───────────────────────────────
+async function getSheetId(nombreHoja) {
+  const url = `${BASE_SHEETS}/${SPREADSHEET_ID}`;
+  const res = await fetch(url, { headers: headers() });
+  const data = await res.json();
+  const hoja = data.sheets.find(s => s.properties.title === nombreHoja);
+  return hoja ? hoja.properties.sheetId : 0;
+}
+
+// ── Eliminar fila por índice (0-based) ───────────────────────
+export async function eliminarFila(nombreHoja, indiceFilaConCabecera) {
+  const sheetId = await getSheetId(nombreHoja);
+  const url = `${BASE_SHEETS}/${SPREADSHEET_ID}:batchUpdate`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({
+      requests: [{
+        deleteDimension: {
+          range: {
+            sheetId,
+            dimension: "ROWS",
+            startIndex: indiceFilaConCabecera,
+            endIndex:   indiceFilaConCabecera + 1,
+          }
+        }
+      }]
+    }),
+  });
+  if (!res.ok) throw new Error("Error eliminando fila en Sheets");
+  return res.json();
+}
+
 // ── Obtener tipos de curso ───────────────────────────────────
 export async function getTiposCurso() {
   const filas = await leerRango("TIPOS_CURSO", "A2:F100");
@@ -70,7 +102,8 @@ export async function getSesiones() {
   const filas = await leerRango("SESIONES", "A2:T1000");
   return filas
     .filter(f => f[0])
-    .map(f => ({
+    .map((f, idx) => ({
+      _fila:           idx + 2, // índice real en Sheets (1-based con cabecera)
       id:              f[0]  || "",
       fecha:           f[1]  || "",
       diaSemana:       f[2]  || "",
@@ -99,7 +132,8 @@ export async function getPagos() {
   const filas = await leerRango("PAGOS", "A2:G500");
   return filas
     .filter(f => f[0])
-    .map(f => ({
+    .map((f, idx) => ({
+      _fila:    idx + 2,
       id:       f[0] || "",
       fecha:    f[1] || "",
       mes:      f[2] || "",
@@ -136,6 +170,33 @@ export async function guardarSesion(sesion) {
   ]);
 }
 
+// ── Actualizar sesión existente ──────────────────────────────
+export async function actualizarSesion(sesion) {
+  const fila = sesion._fila;
+  return escribirRango("SESIONES", `A${fila}:T${fila}`, [[
+    sesion.id,
+    sesion.fecha,
+    sesion.diaSemana,
+    sesion.semana,
+    sesion.mes,
+    sesion.año,
+    sesion.tipoCurso,
+    sesion.horaInicio1,
+    sesion.horaFin1,
+    sesion.pausa,
+    sesion.horaInicio2  || "",
+    sesion.horaFin2     || "",
+    sesion.horasTramo1,
+    sesion.horasTramo2  || 0,
+    sesion.horasTotal,
+    sesion.tipoPrecio,
+    sesion.precioHora,
+    sesion.precioTotal,
+    sesion.calendarEventId || "",
+    sesion.notas           || "",
+  ]]);
+}
+
 // ── Guardar pago ─────────────────────────────────────────────
 export async function guardarPago(pago) {
   return añadirFila("PAGOS", [
@@ -147,6 +208,20 @@ export async function guardarPago(pago) {
     pago.concepto,
     pago.notas || "",
   ]);
+}
+
+// ── Actualizar pago existente ────────────────────────────────
+export async function actualizarPago(pago) {
+  const fila = pago._fila;
+  return escribirRango("PAGOS", `A${fila}:G${fila}`, [[
+    pago.id,
+    pago.fecha,
+    pago.mes,
+    pago.año,
+    pago.importe,
+    pago.concepto,
+    pago.notas || "",
+  ]]);
 }
 
 // ── Crear evento en Google Calendar ─────────────────────────
@@ -178,11 +253,36 @@ export async function eliminarEventoCalendar(eventId) {
   if (!eventId) return;
   const ids = eventId.split(",").filter(Boolean);
   for (const id of ids) {
-    await fetch(`${BASE_CALENDAR}/calendars/primary/events/${id.trim()}`, {
-      method: "DELETE",
-      headers: headers(),
-    });
+    try {
+      await fetch(`${BASE_CALENDAR}/calendars/primary/events/${id.trim()}`, {
+        method: "DELETE",
+        headers: headers(),
+      });
+    } catch (e) {
+      console.warn("No se pudo eliminar evento Calendar:", id);
+    }
   }
+}
+
+// ── Obtener calendario Control_Contable ──────────────────────
+export async function getCalendarControlContable() {
+  const res = await fetch(`${BASE_CALENDAR}/users/me/calendarList`, {
+    headers: headers(),
+  });
+  const data = await res.json();
+  const cal = (data.items || []).find(c => c.summary === "Control_Contable");
+  return cal ? cal.id : null;
+}
+
+// ── Leer eventos de Control_Contable ─────────────────────────
+export async function getEventosCalendar(calendarId) {
+  const ahora = new Date();
+  const hace1año = new Date(ahora.getFullYear() - 1, 0, 1).toISOString();
+  const url = `${BASE_CALENDAR}/calendars/${encodeURIComponent(calendarId)}/events?timeMin=${hace1año}&maxResults=500&singleEvents=true&orderBy=startTime`;
+  const res = await fetch(url, { headers: headers() });
+  if (!res.ok) throw new Error("Error leyendo eventos de Calendar");
+  const data = await res.json();
+  return data.items || [];
 }
 
 // ── Generar ID único ─────────────────────────────────────────
