@@ -1,13 +1,13 @@
 {
   "files": {
     "main.css": "/autoescuela-app/static/css/main.31bc35f5.css",
-    "main.js": "/autoescuela-app/static/js/main.ba6bca23.js",
+    "main.js": "/autoescuela-app/static/js/main.d31c9629.js",
     "index.html": "/autoescuela-app/index.html",
     "main.31bc35f5.css.map": "/autoescuela-app/static/css/main.31bc35f5.css.map",
-    "main.ba6bca23.js.map": "/autoescuela-app/static/js/main.ba6bca23.js.map"
+    "main.d31c9629.js.map": "/autoescuela-app/static/js/main.d31c9629.js.map"
   },
   "entrypoints": [
     "static/css/main.31bc35f5.css",
-    "static/js/main.ba6bca23.js"
+    "static/js/main.d31c9629.js"
   ]
 }
