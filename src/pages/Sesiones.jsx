@@ -98,13 +98,23 @@ function Sesiones() {
     const fechaObj = parsearFecha(sesion.fecha);
     const fechaISO = fechaObj ? format(fechaObj, "yyyy-MM-dd") : "";
     setFormEdit({
-      ...sesion,
+      _fila:        sesion._fila,
+      id:           sesion.id,
       fechaISO,
-      hasPausa: sesion.pausa === "SI",
+      tipoCurso:    sesion.tipoCurso,
+      horaInicio1:  sesion.horaInicio1  || "09:00",
+      horaFin1:     sesion.horaFin1     || "14:00",
+      hasPausa:     sesion.pausa === "SI",
+      horaInicio2:  sesion.horaInicio2  || "14:00",
+      horaFin2:     sesion.horaFin2     || "16:00",
+      tipoPrecio:   sesion.tipoPrecio   || "hora",
+      precioHora:   sesion.precioHora   || 15,
+      precioFijo:   sesion.precioTotal  || 0,
+      notas:        sesion.notas        || "",
+      calendarEventId: sesion.calendarEventId || "",
     });
     setEditando(sesion);
   };
-
   const handleChangeEdit = (campo, valor) => {
     setFormEdit(f => ({ ...f, [campo]: valor }));
   };
