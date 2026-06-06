@@ -83,7 +83,7 @@ export async function eliminarFila(nombreHoja, indiceFilaConCabecera) {
 
 // ── Obtener tipos de curso ───────────────────────────────────
 export async function getTiposCurso() {
-  const filas = await leerRango("TIPOS_CURSO", "A2:F100");
+  const filas = await leerRango("TIPOS_CURSO", "A2:G100");
   return filas
     .filter(f => f[0])
     .map(f => ({
@@ -93,6 +93,7 @@ export async function getTiposCurso() {
       precio:        limpiarNumero(f[3]) || 15,
       colorCalendar: f[4] || "#1a73e8",
       activo:        f[5] === "SI",
+      duracionMin:   parseInt(f[6]) || 60,
     }))
     .filter(t => t.activo);
 }
@@ -103,7 +104,7 @@ export async function getSesiones() {
   return filas
     .filter(f => f[0])
     .map((f, idx) => ({
-      _fila:           idx + 2, // índice real en Sheets (1-based con cabecera)
+      _fila:           idx + 2,
       id:              f[0]  || "",
       fecha:           f[1]  || "",
       diaSemana:       f[2]  || "",

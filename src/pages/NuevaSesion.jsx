@@ -15,7 +15,16 @@ const calcularHoras = (inicio, fin) => {
   if (!inicio || !fin) return 0;
   const [h1,m1] = inicio.split(":").map(Number);
   const [h2,m2] = fin.split(":").map(Number);
-  return Math.max(0, ((h2*60+m2) - (h1*60+m1)) / 60);
+  return Math.max(0, ((h2*60+m2)-(h1*60+m1))/60);
+};
+
+// Añadir minutos a una hora HH:MM
+const sumarMinutos = (hora, minutos) => {
+  const [h, m] = hora.split(":").map(Number);
+  const total = h * 60 + m + minutos;
+  const hh = Math.floor(total / 60) % 24;
+  const mm = total % 60;
+  return `${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}`;
 };
 
 const diasSemana = ["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"];
@@ -48,12 +57,18 @@ function NuevaSesion() {
     try {
       const t = await getTiposCurso();
       setTipos(t);
-      if (t.length > 0) setForm(f => ({
-        ...f,
-        tipoCurso:  t[0].nombre,
-        tipoPrecio: t[0].tipoPrecio,
-        precioHora: t[0].precio,
-      }));
+      if (t.length > 0) {
+        const primero = t[0];
+        const horaFin = sumarMinutos("09:00", primero.duracionMin);
+        setForm(f => ({
+          ...f,
+          tipoCurso:   primero.nombre,
+          tipoPrecio:  primero.tipoPrecio,
+          precioHora:  primero.precio,
+          precioFijo:  primero.tipoPrecio === "total" ? primero.precio : 0,
+          horaFin,
+        }));
+      }
     } catch (e) {
       setError("Error cargando tipos de curso");
     } finally {
@@ -63,28 +78,40 @@ function NuevaSesion() {
 
   const handleCursoChange = (nombre) => {
     const tipo = tipos.find(t => t.nombre === nombre);
-    if (tipo) setForm(f => ({
-      ...f,
-      tipoCurso:  nombre,
-      tipoPrecio: tipo.tipoPrecio,
-      precioHora: tipo.precio,
-      precioFijo: tipo.tipoPrecio === "total" ? tipo.precio : 0,
-    }));
+    if (tipo) {
+      const horaFin = sumarMinutos(form.horaInicio, tipo.duracionMin);
+      setForm(f => ({
+        ...f,
+        tipoCurso:  nombre,
+        tipoPrecio: tipo.tipoPrecio,
+        precioHora: tipo.precio,
+        precioFijo: tipo.tipoPrecio === "total" ? tipo.precio : 0,
+        horaFin,
+      }));
+    }
   };
 
-  const handleChange = (campo, valor) => setForm(f => ({ ...f, [campo]: valor }));
+  const handleChange = (campo, valor) => {
+    // Si cambia la hora de inicio, recalcular hora fin según duración del curso
+    if (campo === "horaInicio") {
+      const tipoActual = tipos.find(t => t.nombre === form.tipoCurso);
+      if (tipoActual) {
+        const horaFin = sumarMinutos(valor, tipoActual.duracionMin);
+        setForm(f => ({ ...f, horaInicio: valor, horaFin }));
+        return;
+      }
+    }
+    setForm(f => ({ ...f, [campo]: valor }));
+  };
 
-  // ── Cálculo correcto de horas ──────────────────────────────
+  // ── Cálculos ─────────────────────────────────────────────
   const horasTotalesBruto = calcularHoras(form.horaInicio, form.horaFin);
   const horasPausa        = hasPausa ? calcularHoras(form.pausaInicio, form.pausaFin) : 0;
   const horasTotal        = Math.max(0, horasTotalesBruto - horasPausa);
-
-  // Tramos para Calendar
-  const horasTramo1 = hasPausa ? calcularHoras(form.horaInicio, form.pausaInicio) : horasTotal;
-  const horasTramo2 = hasPausa ? calcularHoras(form.pausaFin, form.horaFin) : 0;
-
-  const tipoActual  = tipos.find(t => t.nombre === form.tipoCurso);
-  const precioTotal = form.tipoPrecio === "hora"
+  const horasTramo1       = hasPausa ? calcularHoras(form.horaInicio, form.pausaInicio) : horasTotal;
+  const horasTramo2       = hasPausa ? calcularHoras(form.pausaFin, form.horaFin) : 0;
+  const tipoActual        = tipos.find(t => t.nombre === form.tipoCurso);
+  const precioTotal       = form.tipoPrecio === "hora"
     ? horasTotal * parseFloat(form.precioHora)
     : parseFloat(form.precioFijo || 0);
 
@@ -94,23 +121,25 @@ function NuevaSesion() {
   const mes       = getMonth(fechaObj) + 1;
   const año       = getYear(fechaObj);
 
+  // Duración configurada del curso actual
+  const duracionCurso = tipoActual ? tipoActual.duracionMin : 60;
+  const numClases     = duracionCurso > 0 ? Math.round((horasTotal * 60) / duracionCurso) : 0;
+
   const handleGuardar = async () => {
     setError(""); setExito("");
-
     if (!form.tipoCurso) return setError("Selecciona un tipo de curso");
     if (horasTotalesBruto <= 0) return setError("La hora de fin debe ser posterior a la de inicio");
     if (hasPausa && horasPausa <= 0) return setError("La hora de fin de pausa debe ser posterior al inicio");
-    if (hasPausa && (calcularHoras(form.horaInicio, form.pausaInicio) <= 0))
+    if (hasPausa && calcularHoras(form.horaInicio, form.pausaInicio) <= 0)
       return setError("La pausa debe estar dentro del horario de la sesión");
-    if (hasPausa && (calcularHoras(form.pausaFin, form.horaFin) <= 0))
+    if (hasPausa && calcularHoras(form.pausaFin, form.horaFin) <= 0)
       return setError("La sesión debe continuar después de la pausa");
 
     setGuardando(true);
     try {
       const colorCurso  = tipoActual?.colorCalendar || "#1a73e8";
-      const descripcion = `${form.tipoCurso} | ${horasTotal.toFixed(2)}h | ${precioTotal.toFixed(2)}€${form.notas ? "\n" + form.notas : ""}`;
+      const descripcion = `${form.tipoCurso} | ${horasTotal.toFixed(2)}h | ${numClases} clase(s) | ${precioTotal.toFixed(2)}€`;
 
-      // Evento tramo 1: horaInicio → pausaInicio (o horaInicio → horaFin si no hay pausa)
       const eventId1 = await crearEventoCalendar({
         titulo:     `🚗 ${form.tipoCurso} (${horasTramo1.toFixed(2)}h)`,
         fecha:      form.fecha,
@@ -120,7 +149,6 @@ function NuevaSesion() {
         descripcion,
       });
 
-      // Evento tramo 2: pausaFin → horaFin (solo si hay pausa)
       let eventId2 = "";
       if (hasPausa && horasTramo2 > 0) {
         eventId2 = await crearEventoCalendar({
@@ -159,7 +187,6 @@ function NuevaSesion() {
       setExito("✅ Sesión guardada correctamente en Sheets y Calendar");
       setForm(f => ({ ...f, fecha: format(new Date(), "yyyy-MM-dd"), notas: "" }));
       setHasPausa(false);
-
     } catch (e) {
       setError("Error al guardar: " + e.message);
     } finally {
@@ -195,6 +222,11 @@ function NuevaSesion() {
               onChange={e => handleCursoChange(e.target.value)}>
               {tipos.map(t => <option key={t.id} value={t.nombre}>{t.nombre}</option>)}
             </select>
+            {tipoActual && (
+              <small style={{ color:"#1557b0", marginTop:"4px", display:"block" }}>
+                ⏱️ Duración configurada: <strong>{tipoActual.duracionMin} min</strong>
+              </small>
+            )}
           </div>
         </div>
       </div>
@@ -220,7 +252,12 @@ function NuevaSesion() {
         </div>
         {horasTotalesBruto > 0 && (
           <div style={{ background:"#e8f0fe", padding:"8px 12px", borderRadius:"8px", fontSize:"14px", color:"#1557b0" }}>
-            ⏱️ Duración total bruta: <strong>{horasTotalesBruto.toFixed(2)} horas</strong>
+            ⏱️ Duración total: <strong>{horasTotalesBruto.toFixed(2)} horas</strong>
+            {numClases > 0 && (
+              <span style={{ marginLeft:"12px", color:"#34a853", fontWeight:"600" }}>
+                = {numClases} clase(s) de {duracionCurso} min
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -235,7 +272,6 @@ function NuevaSesion() {
             ☕ Añadir pausa en medio
           </label>
         </div>
-
         {hasPausa && (
           <div className="pausa-section">
             <div className="card-title" style={{ color:"#e65100" }}>☕ Horario de la pausa</div>
@@ -272,17 +308,14 @@ function NuevaSesion() {
           <div style={{ display:"flex", gap:"16px" }}>
             <label style={{ display:"flex", alignItems:"center", gap:"8px", cursor:"pointer" }}>
               <input type="radio" value="hora" checked={form.tipoPrecio === "hora"}
-                onChange={() => handleChange("tipoPrecio","hora")} />
-              Por hora
+                onChange={() => handleChange("tipoPrecio","hora")} />Por hora
             </label>
             <label style={{ display:"flex", alignItems:"center", gap:"8px", cursor:"pointer" }}>
               <input type="radio" value="total" checked={form.tipoPrecio === "total"}
-                onChange={() => handleChange("tipoPrecio","total")} />
-              Precio fijo total
+                onChange={() => handleChange("tipoPrecio","total")} />Precio fijo total
             </label>
           </div>
         </div>
-
         {form.tipoPrecio === "hora" ? (
           <div className="form-group">
             <label>Precio por hora (€)</label>
@@ -305,7 +338,7 @@ function NuevaSesion() {
                 {horasTotal.toFixed(2)} h
               </div>
               <div style={{ fontSize:"12px", color:"#5f6368" }}>
-                Total horas {hasPausa && <span style={{color:"#e65100"}}>(-{horasPausa.toFixed(2)}h pausa)</span>}
+                Total horas {hasPausa && <span style={{ color:"#e65100" }}>(-{horasPausa.toFixed(2)}h pausa)</span>}
               </div>
             </div>
             <div>
@@ -315,6 +348,11 @@ function NuevaSesion() {
               <div style={{ fontSize:"12px", color:"#5f6368" }}>Total a cobrar</div>
             </div>
           </div>
+          {numClases > 0 && form.tipoPrecio === "hora" && (
+            <div style={{ textAlign:"center", marginTop:"8px", fontSize:"13px", color:"#1557b0" }}>
+              {numClases} clase(s) × {duracionCurso}min × {form.precioHora}€/h
+            </div>
+          )}
         </div>
       </div>
 
