@@ -20,7 +20,7 @@ function Configuracion() {
         .map(f => ({
           id:            f[0] || "",
           nombre:        f[1] || "",
-          tipoPrecio:    f[2] || "hora",
+          tipoPrecio:    f[2] || "clase",
           precio:        f[3] !== undefined && f[3] !== "" ? String(f[3]) : "15",
           colorCalendar: f[4] || "#1a73e8",
           activo:        f[5] === "SI",
@@ -45,7 +45,6 @@ function Configuracion() {
   const guardarTodos = async () => {
     setError(""); setExito(""); setGuardando(true);
     try {
-      // Validar precios y duraciones
       for (const t of tipos) {
         const precio = parseFloat(t.precio);
         const dur    = parseInt(t.duracionMin);
@@ -96,7 +95,7 @@ function Configuracion() {
       <div className="card">
         <div className="card-title">📚 Tipos de curso / clase, precios y duración</div>
         <p style={{ fontSize:"13px", color:"#666", marginBottom:"16px" }}>
-          La duración en minutos se usa para calcular automáticamente las horas al introducir una sesión.
+          Configura el precio por clase y la duración de cada clase. El importe se calculará automáticamente multiplicando el número de clases por el precio unitario.
         </p>
 
         <div style={{ overflowX:"auto" }}>
@@ -106,8 +105,8 @@ function Configuracion() {
                 <th>ID</th>
                 <th>Nombre del curso</th>
                 <th>Tipo precio</th>
-                <th>Precio (€)</th>
-                <th>Duración (min)</th>
+                <th>Precio por clase (€)</th>
+                <th>Duración clase (min)</th>
                 <th>Color Calendar</th>
                 <th>Activo</th>
               </tr>
@@ -129,8 +128,8 @@ function Configuracion() {
                       value={tipo.tipoPrecio}
                       onChange={e => handleCambio(idx, "tipoPrecio", e.target.value)}
                       style={{ border:"1px solid #e0e0e0", borderRadius:"6px", padding:"6px 10px", fontSize:"14px" }}>
-                      <option value="hora">Por hora</option>
-                      <option value="total">Precio fijo</option>
+                      <option value="clase">Por clase</option>
+                      <option value="total">Precio fijo total</option>
                     </select>
                   </td>
                   <td>
@@ -141,7 +140,7 @@ function Configuracion() {
                       onChange={e => handleCambio(idx, "precio", e.target.value)}
                       style={{
                         border: isNaN(parseFloat(tipo.precio)) ? "2px solid #ea4335" : "1px solid #e0e0e0",
-                        borderRadius:"6px", padding:"6px 10px", width:"80px", fontSize:"14px", fontWeight:"600"
+                        borderRadius:"6px", padding:"6px 10px", width:"90px", fontSize:"14px", fontWeight:"600"
                       }}
                     />
                   </td>
