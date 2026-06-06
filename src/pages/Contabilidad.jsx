@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { getSesiones, getPagos, guardarPago, generarId } from "../services/googleApi";
+import { getSesiones, getPagos, guardarPago, actualizarPago, eliminarFila, generarId } from "../services/googleApi";
 import { format, parseISO, isWithinInterval, startOfDay, endOfDay, isValid } from "date-fns";
 
-// Convierte número serial de Sheets a fecha legible
 const formatearFecha = (valor) => {
   if (!valor) return "—";
   if (typeof valor === "string" && valor.includes("/")) return valor;
@@ -13,7 +12,6 @@ const formatearFecha = (valor) => {
   return valor;
 };
 
-// Parsear fecha dd/MM/yyyy a Date
 const parsearFecha = (fechaStr) => {
   if (!fechaStr) return null;
   const partes = fechaStr.split("/");
@@ -22,17 +20,21 @@ const parsearFecha = (fechaStr) => {
 };
 
 function Contabilidad() {
-  const [sesiones, setSesiones]   = useState([]);
-  const [pagos, setPagos]         = useState([]);
-  const [cargando, setCargando]   = useState(true);
-  const [guardando, setGuardando] = useState(false);
-  const [error, setError]         = useState("");
-  const [exito, setExito]         = useState("");
-  const [filtro, setFiltro]       = useState("año");
-  const [añoSelec, setAñoSelec]   = useState(new Date().getFullYear());
-  const [mesSelec, setMesSelec]   = useState(new Date().getMonth() + 1);
-  const [fechaDesde, setFechaDesde] = useState("");
-  const [fechaHasta, setFechaHasta] = useState("");
+  const [sesiones, setSesiones]       = useState([]);
+  const [pagos, setPagos]             = useState([]);
+  const [cargando, setCargando]       = useState(true);
+  const [guardando, setGuardando]     = useState(false);
+  const [error, setError]             = useState("");
+  const [exito, setExito]             = useState("");
+  const [filtro, setFiltro]           = useState("año");
+  const [añoSelec, setAñoSelec]       = useState(new Date().getFullYear());
+  const [mesSelec, setMesSelec]       = useState(new Date().getMonth() + 1);
+  const [fechaDesde, setFechaDesde]   = useState("");
+  const [fechaHasta, setFechaHasta]   = useState("");
+  const [confirmar, setConfirmar]     = useState(null);
+  const [eliminando, setEliminando]   = useState(null);
+  const [editandoPago, setEditandoPago] = useState(null);
+  const [formEdit, setFormEdit]       = useState({});
 
   const meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
                   "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
@@ -59,14 +61,9 @@ function Contabilidad() {
     }
   };
 
-  // ── Aplicar filtro ───────────────────────────────────────
   const aplicarFiltro = (lista) => lista.filter(x => {
-    if (filtro === "año") {
-      return parseInt(x.año) === añoSelec;
-    }
-    if (filtro === "mes") {
-      return parseInt(x.mes) === mesSelec && parseInt(x.año) === añoSelec;
-    }
+    if (filtro === "año") return parseInt(x.año) === añoSelec;
+    if (filtro === "mes") return parseInt(x.mes) === mesSelec && parseInt(x.año) === añoSelec;
     if (filtro === "rango") {
       if (!fechaDesde || !fechaHasta) return true;
       const fecha = parsearFecha(formatearFecha(x.fecha));
@@ -81,20 +78,18 @@ function Contabilidad() {
 
   const sesionesFiltradas = aplicarFiltro(sesiones);
   const pagosFiltrados    = aplicarFiltro(pagos);
+  const totalGenerado     = sesionesFiltradas.reduce((acc, s) => acc + (parseFloat(s.precioTotal) || 0), 0);
+  const totalCobrado      = pagosFiltrados.reduce((acc, p) => acc + (parseFloat(p.importe) || 0), 0);
+  const totalPendiente    = totalGenerado - totalCobrado;
+  const formatEur         = n => `${parseFloat(n).toFixed(2).replace(".", ",")} €`;
 
-  const totalGenerado  = sesionesFiltradas.reduce((acc, s) => acc + (parseFloat(s.precioTotal) || 0), 0);
-  const totalCobrado   = pagosFiltrados.reduce((acc, p) => acc + (parseFloat(p.importe) || 0), 0);
-  const totalPendiente = totalGenerado - totalCobrado;
-
-  const formatEur = n => `${parseFloat(n).toFixed(2).replace(".", ",")} €`;
-
+  // ── Nuevo pago ───────────────────────────────────────────
   const handleGuardarPago = async () => {
     setError(""); setExito("");
     if (!formPago.importe || parseFloat(formPago.importe) <= 0)
       return setError("Introduce un importe válido");
     if (!formPago.concepto)
       return setError("Introduce un concepto para el pago");
-
     setGuardando(true);
     try {
       const fecha = new Date(formPago.fecha);
@@ -117,6 +112,68 @@ function Contabilidad() {
     }
   };
 
+  // ── Abrir modal edición pago ─────────────────────────────
+  const handleEditarPago = (pago) => {
+    const fechaStr = formatearFecha(pago.fecha);
+    const fechaObj = parsearFecha(fechaStr);
+    const fechaISO = fechaObj ? format(fechaObj, "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd");
+    setFormEdit({
+      _fila:    pago._fila,
+      id:       pago.id,
+      fechaISO,
+      importe:  pago.importe,
+      concepto: pago.concepto,
+      notas:    pago.notas || "",
+    });
+    setEditandoPago(pago);
+  };
+
+  // ── Guardar edición pago ─────────────────────────────────
+  const handleGuardarEdit = async () => {
+    setError(""); setExito("");
+    if (!formEdit.importe || parseFloat(formEdit.importe) <= 0)
+      return setError("Introduce un importe válido");
+    if (!formEdit.concepto)
+      return setError("Introduce un concepto");
+    setGuardando(true);
+    try {
+      const fecha = new Date(formEdit.fechaISO);
+      await actualizarPago({
+        _fila:    formEdit._fila,
+        id:       formEdit.id,
+        fecha:    format(fecha, "dd/MM/yyyy"),
+        mes:      fecha.getMonth() + 1,
+        año:      fecha.getFullYear(),
+        importe:  parseFloat(formEdit.importe),
+        concepto: formEdit.concepto,
+        notas:    formEdit.notas || "",
+      });
+      setExito("✅ Pago actualizado correctamente");
+      setEditandoPago(null);
+      await cargarDatos();
+    } catch (e) {
+      setError("Error al actualizar: " + e.message);
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  // ── Eliminar pago ────────────────────────────────────────
+  const handleEliminarPago = async (pago) => {
+    setEliminando(pago.id);
+    setError(""); setExito("");
+    try {
+      await eliminarFila("PAGOS", pago._fila - 1);
+      setExito("✅ Pago eliminado correctamente");
+      setConfirmar(null);
+      await cargarDatos();
+    } catch (e) {
+      setError("Error al eliminar: " + e.message);
+    } finally {
+      setEliminando(null);
+    }
+  };
+
   if (cargando) return <div className="loading"><div className="spinner"></div> Cargando...</div>;
 
   const pagosOrdenados = pagosFiltrados.sort((a, b) => {
@@ -136,6 +193,73 @@ function Contabilidad() {
       {error && <div className="alerta alerta-error">{error}</div>}
       {exito && <div className="alerta alerta-success">{exito}</div>}
 
+      {/* ── Modal confirmar eliminar ─────────────────────── */}
+      {confirmar && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000 }}>
+          <div style={{ background:"white", borderRadius:"16px", padding:"28px", maxWidth:"360px", width:"90%", textAlign:"center" }}>
+            <div style={{ fontSize:"40px", marginBottom:"12px" }}>🗑️</div>
+            <h3 style={{ marginBottom:"8px" }}>¿Eliminar pago?</h3>
+            <p style={{ color:"#666", fontSize:"14px", marginBottom:"20px" }}>
+              <strong>{formatearFecha(confirmar.fecha)}</strong> — {confirmar.concepto}<br/>
+              <strong>{formatEur(confirmar.importe)}</strong>
+            </p>
+            <div style={{ display:"flex", gap:"12px" }}>
+              <button className="btn btn-outline" style={{ flex:1 }}
+                onClick={() => setConfirmar(null)}>Cancelar</button>
+              <button className="btn btn-danger" style={{ flex:1, justifyContent:"center" }}
+                disabled={eliminando === confirmar.id}
+                onClick={() => handleEliminarPago(confirmar)}>
+                {eliminando === confirmar.id
+                  ? <><div className="spinner" style={{ width:"16px",height:"16px",borderWidth:"2px" }}></div> Eliminando...</>
+                  : "🗑️ Eliminar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal editar pago ────────────────────────────── */}
+      {editandoPago && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.6)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000, padding:"20px" }}>
+          <div style={{ background:"white", borderRadius:"16px", padding:"24px", maxWidth:"420px", width:"100%" }}>
+            <h3 style={{ marginBottom:"20px", color:"#1557b0" }}>✏️ Editar pago</h3>
+            <div className="form-row">
+              <div className="form-group">
+                <label>Fecha</label>
+                <input type="date" className="form-control" value={formEdit.fechaISO}
+                  onChange={e => setFormEdit(f => ({ ...f, fechaISO: e.target.value }))} />
+              </div>
+              <div className="form-group">
+                <label>Importe (€)</label>
+                <input type="number" className="form-control" value={formEdit.importe}
+                  onChange={e => setFormEdit(f => ({ ...f, importe: e.target.value }))}
+                  min="0" step="0.01" />
+              </div>
+            </div>
+            <div className="form-group">
+              <label>Concepto</label>
+              <input type="text" className="form-control" value={formEdit.concepto}
+                onChange={e => setFormEdit(f => ({ ...f, concepto: e.target.value }))} />
+            </div>
+            <div className="form-group">
+              <label>Notas (opcional)</label>
+              <input type="text" className="form-control" value={formEdit.notas}
+                onChange={e => setFormEdit(f => ({ ...f, notas: e.target.value }))} />
+            </div>
+            <div style={{ display:"flex", gap:"12px" }}>
+              <button className="btn btn-outline" style={{ flex:1 }}
+                onClick={() => setEditandoPago(null)}>Cancelar</button>
+              <button className="btn btn-success" style={{ flex:1, justifyContent:"center" }}
+                disabled={guardando} onClick={handleGuardarEdit}>
+                {guardando
+                  ? <><div className="spinner" style={{ width:"16px",height:"16px",borderWidth:"2px" }}></div> Guardando...</>
+                  : "💾 Guardar cambios"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Filtros ─────────────────────────────────────── */}
       <div className="card">
         <div style={{ display:"flex", gap:"8px", flexWrap:"wrap", marginBottom:"16px" }}>
@@ -144,16 +268,12 @@ function Contabilidad() {
             { key:"mes",   label:"Por mes" },
             { key:"rango", label:"📅 Rango de fechas" },
           ].map(f => (
-            <button
-              key={f.key}
+            <button key={f.key}
               className={`btn ${filtro === f.key ? "btn-primary" : "btn-outline"}`}
-              onClick={() => setFiltro(f.key)}
-            >
-              {f.label}
+              onClick={() => setFiltro(f.key)}>{f.label}
             </button>
           ))}
         </div>
-
         <div style={{ display:"flex", gap:"12px", flexWrap:"wrap", alignItems:"center" }}>
           {filtro === "año" && (
             <select className="form-control" style={{ width:"auto" }}
@@ -161,34 +281,28 @@ function Contabilidad() {
               {[2024,2025,2026,2027].map(a => <option key={a} value={a}>{a}</option>)}
             </select>
           )}
-
-          {filtro === "mes" && (
-            <>
-              <select className="form-control" style={{ width:"auto" }}
-                value={mesSelec} onChange={e => setMesSelec(parseInt(e.target.value))}>
-                {meses.map((m, i) => <option key={i} value={i+1}>{m}</option>)}
-              </select>
-              <select className="form-control" style={{ width:"auto" }}
-                value={añoSelec} onChange={e => setAñoSelec(parseInt(e.target.value))}>
-                {[2024,2025,2026,2027].map(a => <option key={a} value={a}>{a}</option>)}
-              </select>
-            </>
-          )}
-
-          {filtro === "rango" && (
-            <>
-              <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
-                <label style={{ fontSize:"13px", fontWeight:"600", color:"#5f6368" }}>Desde:</label>
-                <input type="date" className="form-control" style={{ width:"auto" }}
-                  value={fechaDesde} onChange={e => setFechaDesde(e.target.value)} />
-              </div>
-              <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
-                <label style={{ fontSize:"13px", fontWeight:"600", color:"#5f6368" }}>Hasta:</label>
-                <input type="date" className="form-control" style={{ width:"auto" }}
-                  value={fechaHasta} onChange={e => setFechaHasta(e.target.value)} />
-              </div>
-            </>
-          )}
+          {filtro === "mes" && (<>
+            <select className="form-control" style={{ width:"auto" }}
+              value={mesSelec} onChange={e => setMesSelec(parseInt(e.target.value))}>
+              {meses.map((m,i) => <option key={i} value={i+1}>{m}</option>)}
+            </select>
+            <select className="form-control" style={{ width:"auto" }}
+              value={añoSelec} onChange={e => setAñoSelec(parseInt(e.target.value))}>
+              {[2024,2025,2026,2027].map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </>)}
+          {filtro === "rango" && (<>
+            <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
+              <label style={{ fontSize:"13px", fontWeight:"600", color:"#5f6368" }}>Desde:</label>
+              <input type="date" className="form-control" style={{ width:"auto" }}
+                value={fechaDesde} onChange={e => setFechaDesde(e.target.value)} />
+            </div>
+            <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
+              <label style={{ fontSize:"13px", fontWeight:"600", color:"#5f6368" }}>Hasta:</label>
+              <input type="date" className="form-control" style={{ width:"auto" }}
+                value={fechaHasta} onChange={e => setFechaHasta(e.target.value)} />
+            </div>
+          </>)}
         </div>
       </div>
 
@@ -220,11 +334,9 @@ function Contabilidad() {
         </div>
         <div style={{ background:"#e0e0e0", borderRadius:"8px", height:"16px", overflow:"hidden" }}>
           <div style={{
-            background:"linear-gradient(90deg,#34a853,#1e7e34)",
-            height:"100%",
+            background:"linear-gradient(90deg,#34a853,#1e7e34)", height:"100%",
             width:`${totalGenerado > 0 ? Math.min(100,(totalCobrado/totalGenerado)*100) : 0}%`,
-            borderRadius:"8px",
-            transition:"width 0.5s ease",
+            borderRadius:"8px", transition:"width 0.5s ease",
           }} />
         </div>
         <div style={{ marginTop:"8px", fontSize:"13px", color:"#ea4335" }}>
@@ -232,7 +344,7 @@ function Contabilidad() {
         </div>
       </div>
 
-      {/* ── Registrar pago ──────────────────────────────── */}
+      {/* ── Registrar nuevo pago ────────────────────────── */}
       <div className="card">
         <div className="card-title">💵 Registrar nuevo pago</div>
         <div className="form-row">
@@ -280,7 +392,7 @@ function Contabilidad() {
           <div className="tabla-container">
             <table>
               <thead>
-                <tr><th>Fecha</th><th>Concepto</th><th>Importe</th><th>Notas</th></tr>
+                <tr><th>Fecha</th><th>Concepto</th><th>Importe</th><th>Notas</th><th>Acciones</th></tr>
               </thead>
               <tbody>
                 {pagosOrdenados.map((p, i) => (
@@ -289,6 +401,14 @@ function Contabilidad() {
                     <td>{p.concepto}</td>
                     <td><strong style={{ color:"#34a853" }}>{formatEur(p.importe)}</strong></td>
                     <td style={{ fontSize:"13px", color:"#666" }}>{p.notas || "—"}</td>
+                    <td>
+                      <div style={{ display:"flex", gap:"6px" }}>
+                        <button className="btn btn-outline" style={{ padding:"4px 10px", fontSize:"12px" }}
+                          onClick={() => handleEditarPago(p)}>✏️</button>
+                        <button className="btn btn-danger" style={{ padding:"4px 10px", fontSize:"12px" }}
+                          onClick={() => setConfirmar(p)}>🗑️</button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
