@@ -21,10 +21,10 @@ function Configuracion() {
           id:            f[0] || "",
           nombre:        f[1] || "",
           tipoPrecio:    f[2] || "hora",
-          precio:        f[3] !== undefined && f[3] !== "" ? parseFloat(f[3]) : 15,
+          precio:        f[3] !== undefined && f[3] !== "" ? String(f[3]) : "15",
           colorCalendar: f[4] || "#1a73e8",
           activo:        f[5] === "SI",
-          duracionMin:   parseInt(f[6]) || 60,
+          duracionMin:   f[6] !== undefined && f[6] !== "" ? String(f[6]) : "60",
         }));
       setTipos(datos);
       setHayCambios(false);
@@ -36,35 +36,33 @@ function Configuracion() {
   };
 
   const handleCambio = (idx, campo, valor) => {
-    setTipos(prev => prev.map((t, i) => {
-      if (i !== idx) return t;
-      if (campo === "precio") {
-        const num = parseFloat(valor);
-        return { ...t, [campo]: isNaN(num) ? 0 : num };
-      }
-      if (campo === "duracionMin") {
-        const num = parseInt(valor);
-        return { ...t, [campo]: isNaN(num) ? 60 : num };
-      }
-      return { ...t, [campo]: valor };
-    }));
+    setTipos(prev => prev.map((t, i) =>
+      i === idx ? { ...t, [campo]: valor } : t
+    ));
     setHayCambios(true);
   };
 
   const guardarTodos = async () => {
     setError(""); setExito(""); setGuardando(true);
     try {
-      const hayErrores = tipos.some(t => isNaN(t.precio) || t.precio < 0);
-      if (hayErrores) return setError("Hay precios inválidos. Revisa los valores.");
+      // Validar precios y duraciones
+      for (const t of tipos) {
+        const precio = parseFloat(t.precio);
+        const dur    = parseInt(t.duracionMin);
+        if (isNaN(precio) || precio < 0)
+          return setError(`Precio inválido en "${t.nombre}"`);
+        if (isNaN(dur) || dur < 1)
+          return setError(`Duración inválida en "${t.nombre}"`);
+      }
 
       const filas = tipos.map(t => [
         t.id,
         t.nombre,
         t.tipoPrecio,
-        t.precio.toString(),
+        parseFloat(t.precio).toString(),
         t.colorCalendar,
         t.activo ? "SI" : "NO",
-        t.duracionMin.toString(),
+        parseInt(t.duracionMin).toString(),
       ]);
 
       await escribirRango("TIPOS_CURSO", `A2:G${filas.length + 1}`, filas);
@@ -119,12 +117,16 @@ function Configuracion() {
                 <tr key={idx}>
                   <td style={{ fontSize:"12px", color:"#999" }}>{tipo.id}</td>
                   <td>
-                    <input type="text" value={tipo.nombre}
+                    <input
+                      type="text"
+                      value={tipo.nombre}
                       onChange={e => handleCambio(idx, "nombre", e.target.value)}
-                      style={{ border:"1px solid #e0e0e0", borderRadius:"6px", padding:"6px 10px", width:"160px", fontSize:"14px" }} />
+                      style={{ border:"1px solid #e0e0e0", borderRadius:"6px", padding:"6px 10px", width:"160px", fontSize:"14px" }}
+                    />
                   </td>
                   <td>
-                    <select value={tipo.tipoPrecio}
+                    <select
+                      value={tipo.tipoPrecio}
                       onChange={e => handleCambio(idx, "tipoPrecio", e.target.value)}
                       style={{ border:"1px solid #e0e0e0", borderRadius:"6px", padding:"6px 10px", fontSize:"14px" }}>
                       <option value="hora">Por hora</option>
@@ -132,34 +134,51 @@ function Configuracion() {
                     </select>
                   </td>
                   <td>
-                    <input type="number" value={tipo.precio}
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={tipo.precio}
                       onChange={e => handleCambio(idx, "precio", e.target.value)}
-                      min="0" step="0.5"
-                      style={{ border: isNaN(tipo.precio) ? "2px solid #ea4335" : "1px solid #e0e0e0",
-                        borderRadius:"6px", padding:"6px 10px", width:"80px", fontSize:"14px", fontWeight:"600" }} />
+                      style={{
+                        border: isNaN(parseFloat(tipo.precio)) ? "2px solid #ea4335" : "1px solid #e0e0e0",
+                        borderRadius:"6px", padding:"6px 10px", width:"80px", fontSize:"14px", fontWeight:"600"
+                      }}
+                    />
                   </td>
                   <td>
                     <div style={{ display:"flex", alignItems:"center", gap:"6px" }}>
-                      <input type="number" value={tipo.duracionMin}
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={tipo.duracionMin}
                         onChange={e => handleCambio(idx, "duracionMin", e.target.value)}
-                        min="15" step="15"
-                        style={{ border:"1px solid #e0e0e0", borderRadius:"6px", padding:"6px 10px", width:"70px", fontSize:"14px" }} />
+                        style={{
+                          border: isNaN(parseInt(tipo.duracionMin)) ? "2px solid #ea4335" : "1px solid #e0e0e0",
+                          borderRadius:"6px", padding:"6px 10px", width:"70px", fontSize:"14px"
+                        }}
+                      />
                       <span style={{ fontSize:"12px", color:"#666" }}>min</span>
                     </div>
                   </td>
                   <td>
                     <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
-                      <input type="color" value={tipo.colorCalendar}
+                      <input
+                        type="color"
+                        value={tipo.colorCalendar}
                         onChange={e => handleCambio(idx, "colorCalendar", e.target.value)}
-                        style={{ width:"36px", height:"32px", cursor:"pointer", border:"none" }} />
+                        style={{ width:"36px", height:"32px", cursor:"pointer", border:"none" }}
+                      />
                       <span style={{ fontSize:"12px", color:"#999" }}>{tipo.colorCalendar}</span>
                     </div>
                   </td>
                   <td>
                     <label style={{ display:"flex", alignItems:"center", gap:"6px", cursor:"pointer" }}>
-                      <input type="checkbox" checked={tipo.activo}
+                      <input
+                        type="checkbox"
+                        checked={tipo.activo}
                         onChange={e => handleCambio(idx, "activo", e.target.checked)}
-                        style={{ width:"16px", height:"16px" }} />
+                        style={{ width:"16px", height:"16px" }}
+                      />
                       {tipo.activo ? "✅" : "❌"}
                     </label>
                   </td>
@@ -170,7 +189,9 @@ function Configuracion() {
         </div>
 
         <div style={{ marginTop:"20px", display:"flex", gap:"12px" }}>
-          <button className="btn btn-success" onClick={guardarTodos}
+          <button
+            className="btn btn-success"
+            onClick={guardarTodos}
             disabled={guardando || !hayCambios}
             style={{ flex:1, justifyContent:"center", padding:"14px", opacity: hayCambios ? 1 : 0.6 }}>
             {guardando
