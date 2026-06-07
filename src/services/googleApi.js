@@ -15,6 +15,18 @@ const limpiarNumero = (v) => {
   return isNaN(num) ? 0 : num;
 };
 
+// ── ID del calendario Control_Contable (caché en memoria) ────
+let _calendarIdCache = null;
+
+export async function getCalendarControlContable() {
+  if (_calendarIdCache) return _calendarIdCache;
+  const res  = await fetch(`${BASE_CALENDAR}/users/me/calendarList`, { headers: headers() });
+  const data = await res.json();
+  const cal  = (data.items || []).find(c => c.summary === "Control_Contable");
+  _calendarIdCache = cal ? cal.id : null;
+  return _calendarIdCache;
+}
+
 // ── Leer rango ───────────────────────────────────────────────
 export async function leerRango(hoja, rango) {
   const url = `${BASE_SHEETS}/${SPREADSHEET_ID}/values/${hoja}!${rango}`;
@@ -50,8 +62,8 @@ export async function añadirFila(hoja, valores) {
 
 // ── Obtener ID interno de hoja ───────────────────────────────
 async function getSheetId(nombreHoja) {
-  const url = `${BASE_SHEETS}/${SPREADSHEET_ID}`;
-  const res = await fetch(url, { headers: headers() });
+  const url  = `${BASE_SHEETS}/${SPREADSHEET_ID}`;
+  const res  = await fetch(url, { headers: headers() });
   const data = await res.json();
   const hoja = data.sheets.find(s => s.properties.title === nombreHoja);
   return hoja ? hoja.properties.sheetId : 0;
@@ -69,7 +81,7 @@ export async function eliminarFila(nombreHoja, indiceFilaConCabecera) {
         deleteDimension: {
           range: {
             sheetId,
-            dimension: "ROWS",
+            dimension:  "ROWS",
             startIndex: indiceFilaConCabecera,
             endIndex:   indiceFilaConCabecera + 1,
           }
@@ -89,7 +101,7 @@ export async function getTiposCurso() {
     .map(f => ({
       id:            f[0] || "",
       nombre:        f[1] || "",
-      tipoPrecio:    f[2] || "hora",
+      tipoPrecio:    f[2] || "clase",
       precio:        limpiarNumero(f[3]) || 15,
       colorCalendar: f[4] || "#1a73e8",
       activo:        f[5] === "SI",
@@ -120,7 +132,7 @@ export async function getSesiones() {
       horasTramo1:     limpiarNumero(f[12]),
       horasTramo2:     limpiarNumero(f[13]),
       horasTotal:      limpiarNumero(f[14]),
-      tipoPrecio:      f[15] || "hora",
+      tipoPrecio:      f[15] || "clase",
       precioHora:      limpiarNumero(f[16]) || 15,
       precioTotal:     limpiarNumero(f[17]),
       calendarEventId: f[18] || "",
@@ -225,13 +237,18 @@ export async function actualizarPago(pago) {
   ]]);
 }
 
-// ── Crear evento en Google Calendar ─────────────────────────
+// ── Crear evento en Control_Contable ─────────────────────────
 export async function crearEventoCalendar({ titulo, fecha, horaInicio, horaFin, color, descripcion }) {
   const colorMap = {
     "#4285F4": "1", "#EA4335": "11", "#FBBC04": "5",
     "#34A853": "2", "#FF6D00": "6",  "#46BDC6": "7",
     "#7B61FF": "9", "#E91E63": "4",  "#795548": "8",
   };
+
+  // Obtener ID del calendario Control_Contable
+  const calendarId = await getCalendarControlContable();
+  if (!calendarId) throw new Error("No se encontró el calendario Control_Contable");
+
   const evento = {
     summary:     titulo,
     description: descripcion || "",
@@ -239,51 +256,58 @@ export async function crearEventoCalendar({ titulo, fecha, horaInicio, horaFin, 
     end:   { dateTime: `${fecha}T${horaFin}:00`,    timeZone: "Europe/Madrid" },
     colorId: colorMap[color?.toUpperCase()] || "1",
   };
-  const res = await fetch(`${BASE_CALENDAR}/calendars/primary/events`, {
-    method: "POST",
-    headers: headers(),
-    body: JSON.stringify(evento),
-  });
-  if (!res.ok) throw new Error("Error creando evento en Google Calendar");
+
+  const res = await fetch(
+    `${BASE_CALENDAR}/calendars/${encodeURIComponent(calendarId)}/events`,
+    {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify(evento),
+    }
+  );
+  if (!res.ok) throw new Error("Error creando evento en Control_Contable");
   const data = await res.json();
   return data.id;
 }
 
-// ── Eliminar evento de Calendar ──────────────────────────────
+// ── Eliminar evento de Control_Contable ──────────────────────
 export async function eliminarEventoCalendar(eventId) {
   if (!eventId) return;
+  const calendarId = await getCalendarControlContable();
+  if (!calendarId) return;
+
   const ids = eventId.split(",").filter(Boolean);
   for (const id of ids) {
     try {
-      await fetch(`${BASE_CALENDAR}/calendars/primary/events/${id.trim()}`, {
-        method: "DELETE",
-        headers: headers(),
-      });
+      await fetch(
+        `${BASE_CALENDAR}/calendars/${encodeURIComponent(calendarId)}/events/${id.trim()}`,
+        { method: "DELETE", headers: headers() }
+      );
     } catch (e) {
       console.warn("No se pudo eliminar evento Calendar:", id);
     }
   }
 }
 
-// ── Obtener calendario Control_Contable ──────────────────────
-export async function getCalendarControlContable() {
-  const res = await fetch(`${BASE_CALENDAR}/users/me/calendarList`, {
-    headers: headers(),
-  });
-  const data = await res.json();
-  const cal = (data.items || []).find(c => c.summary === "Control_Contable");
-  return cal ? cal.id : null;
-}
-
 // ── Leer eventos de Control_Contable ─────────────────────────
 export async function getEventosCalendar(calendarId) {
-  const ahora = new Date();
+  const ahora    = new Date();
   const hace1año = new Date(ahora.getFullYear() - 1, 0, 1).toISOString();
   const url = `${BASE_CALENDAR}/calendars/${encodeURIComponent(calendarId)}/events?timeMin=${hace1año}&maxResults=500&singleEvents=true&orderBy=startTime`;
   const res = await fetch(url, { headers: headers() });
   if (!res.ok) throw new Error("Error leyendo eventos de Calendar");
   const data = await res.json();
   return data.items || [];
+}
+
+// ── Obtener un evento concreto de Calendar ───────────────────
+export async function getEventoCalendar(calendarId, eventId) {
+  const res = await fetch(
+    `${BASE_CALENDAR}/calendars/${encodeURIComponent(calendarId)}/events/${eventId}`,
+    { headers: headers() }
+  );
+  if (!res.ok) return null;
+  return res.json();
 }
 
 // ── Generar ID único ─────────────────────────────────────────

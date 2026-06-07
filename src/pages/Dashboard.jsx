@@ -1,14 +1,18 @@
 import React, { useEffect, useState } from "react";
-import { getSesiones, getPagos, getTiposCurso, getCalendarControlContable, getEventosCalendar, guardarSesion, generarId } from "../services/googleApi";
-import { getWeek, getMonth, getYear, format, parseISO, isAfter, startOfDay } from "date-fns";
+import {
+  getSesiones, getPagos, getTiposCurso,
+  getCalendarControlContable, getEventosCalendar,
+  guardarSesion, actualizarSesion, generarId
+} from "../services/googleApi";
+import { getWeek, getMonth, getYear, format, isAfter, startOfDay } from "date-fns";
 
 function Dashboard() {
-  const [sesiones, setSesiones]         = useState([]);
-  const [pagos, setPagos]               = useState([]);
-  const [cargando, setCargando]         = useState(true);
-  const [error, setError]               = useState("");
+  const [sesiones, setSesiones]           = useState([]);
+  const [pagos, setPagos]                 = useState([]);
+  const [cargando, setCargando]           = useState(true);
+  const [error, setError]                 = useState("");
+  const [exito, setExito]                 = useState("");
   const [sincronizando, setSincronizando] = useState(false);
-  const [exito, setExito]               = useState("");
 
   const hoy       = new Date();
   const semanaHoy = getWeek(hoy, { weekStartsOn: 1 });
@@ -24,79 +28,69 @@ function Dashboard() {
       setSesiones(s);
       setPagos(p);
     } catch (err) {
-      setError("Error al cargar datos. Comprueba tu conexión.");
+      setError("Error al cargar datos.");
     } finally {
       setCargando(false);
     }
   };
 
-  // ── Sincronizar desde Google Calendar ───────────────────
+  // ── Sincronizar Calendar → App ───────────────────────────
   const sincronizarCalendar = async () => {
     setSincronizando(true);
     setError(""); setExito("");
     try {
-      // 1. Obtener tipos de curso activos
       const tipos = await getTiposCurso();
-      const nombresCursos = tipos.map(t => t.nombre);
-
-      // 2. Obtener ID del calendario Control_Contable
       const calendarId = await getCalendarControlContable();
       if (!calendarId) {
-        setError("No se encontró el calendario 'Control_Contable'. Verifica que existe en Google Calendar.");
+        setError("No se encontró el calendario 'Control_Contable'.");
         return;
       }
 
-      // 3. Leer eventos del calendario
-      const eventos = await getEventosCalendar(calendarId);
-
-      // 4. Obtener IDs de eventos ya importados para no duplicar
+      const eventos          = await getEventosCalendar(calendarId);
       const sesionesActuales = await getSesiones();
-      const idsImportados = new Set(
-        sesionesActuales
-          .map(s => s.calendarEventId)
-          .filter(Boolean)
-          .flatMap(id => id.split(","))
-          .map(id => id.trim())
-      );
+      const hoyInicio        = startOfDay(new Date());
 
-      // 5. Filtrar eventos válidos
-      const hoyInicio = startOfDay(new Date());
-      let importados = 0;
-      let ignorados  = 0;
+      // Mapa de eventId → sesión para detectar modificaciones
+      const mapaEventoSesion = {};
+      sesionesActuales.forEach(s => {
+        if (s.calendarEventId) {
+          s.calendarEventId.split(",").forEach(id => {
+            mapaEventoSesion[id.trim()] = s;
+          });
+        }
+      });
+
+      let importados   = 0;
+      let actualizados = 0;
+      let ignorados    = 0;
 
       for (const evento of eventos) {
-        const titulo     = evento.summary?.trim() || "";
+        const titulo      = evento.summary?.trim() || "";
         const fechaEvento = evento.start?.dateTime || evento.start?.date;
         if (!fechaEvento) continue;
 
         const fechaObj = new Date(fechaEvento);
 
-        // Solo eventos cuya fecha ya llegó (pasados o de hoy)
+        // Solo eventos cuya fecha ya llegó
         if (isAfter(startOfDay(fechaObj), hoyInicio)) {
           ignorados++;
           continue;
         }
 
-        // Solo si el título coincide exactamente con un curso
+        // Solo si el título coincide con un curso
         const tipoMatch = tipos.find(t => t.nombre === titulo);
         if (!tipoMatch) continue;
 
-        // No duplicar eventos ya importados
-        if (idsImportados.has(evento.id)) continue;
-
-        // Calcular horas y precio
-        const horaInicio = evento.start?.dateTime
-          ? format(new Date(evento.start.dateTime), "HH:mm")
-          : "09:00";
-        const horaFin = evento.end?.dateTime
-          ? format(new Date(evento.end.dateTime), "HH:mm")
-          : "10:00";
-
-        const duracionMin   = tipoMatch.duracionMin || 60;
-        const minutosNetos  = Math.max(0, (new Date(evento.end?.dateTime || evento.end?.date) - new Date(evento.start?.dateTime || evento.start?.date)) / 60000);
-        const numClases     = duracionMin > 0 ? Math.floor(minutosNetos / duracionMin) : 0;
-        const horasTotal    = minutosNetos / 60;
-        const precioTotal   = tipoMatch.tipoPrecio === "total"
+        const horaInicio   = evento.start?.dateTime ? format(new Date(evento.start.dateTime), "HH:mm") : "09:00";
+        const horaFin      = evento.end?.dateTime   ? format(new Date(evento.end.dateTime),   "HH:mm") : "10:00";
+        const duracionMin  = tipoMatch.duracionMin || 60;
+        const minutosNetos = Math.max(0,
+          (new Date(evento.end?.dateTime   || evento.end?.date) -
+           new Date(evento.start?.dateTime || evento.start?.date)) / 60000
+        );
+        const numClases  = duracionMin > 0 ? Math.floor(minutosNetos / duracionMin) : 0;
+        const horasTotal = minutosNetos / 60;
+        const precioTotal = tipoMatch.tipoPrecio === "total"
           ? tipoMatch.precio
           : numClases * tipoMatch.precio;
 
@@ -106,40 +100,73 @@ function Dashboard() {
         const mes       = getMonth(fechaObj) + 1;
         const año       = getYear(fechaObj);
 
-        await guardarSesion({
-          id:              generarId("CAL"),
-          fecha:           fechaFmt,
-          diaSemana,
-          semana,
-          mes,
-          año,
-          tipoCurso:       titulo,
-          horaInicio1:     horaInicio,
-          horaFin1:        horaFin,
-          pausa:           "NO",
-          horaInicio2:     "",
-          horaFin2:        "",
-          horasTramo1:     horasTotal.toFixed(2),
-          horasTramo2:     "0",
-          horasTotal:      horasTotal.toFixed(2),
-          tipoPrecio:      tipoMatch.tipoPrecio === "total" ? "total" : "clase",
-          precioHora:      tipoMatch.precio,
-          precioTotal:     precioTotal.toFixed(2),
-          calendarEventId: evento.id,
-          notas:           "Importado desde Google Calendar",
-        });
+        const sesionExistente = mapaEventoSesion[evento.id];
 
-        importados++;
+        if (sesionExistente) {
+          // ── Evento ya importado: comprobar si fue modificado ──
+          const mismaHoraInicio = sesionExistente.horaInicio1 === horaInicio;
+          const mismaHoraFin    = sesionExistente.horaFin1    === horaFin;
+          const mismaFecha      = sesionExistente.fecha        === fechaFmt;
+          const mismoTipo       = sesionExistente.tipoCurso    === titulo;
+
+          if (!mismaHoraInicio || !mismaHoraFin || !mismaFecha || !mismoTipo) {
+            // Actualizar sesión en Sheets
+            await actualizarSesion({
+              ...sesionExistente,
+              fecha:       fechaFmt,
+              diaSemana,
+              semana,
+              mes,
+              año,
+              tipoCurso:   titulo,
+              horaInicio1: horaInicio,
+              horaFin1:    horaFin,
+              horasTramo1: horasTotal.toFixed(2),
+              horasTramo2: "0",
+              horasTotal:  horasTotal.toFixed(2),
+              tipoPrecio:  tipoMatch.tipoPrecio === "total" ? "total" : "clase",
+              precioHora:  tipoMatch.precio,
+              precioTotal: precioTotal.toFixed(2),
+              notas:       sesionExistente.notas || "Importado desde Google Calendar",
+            });
+            actualizados++;
+          }
+        } else {
+          // ── Evento nuevo: importar ────────────────────────────
+          await guardarSesion({
+            id:              generarId("CAL"),
+            fecha:           fechaFmt,
+            diaSemana,
+            semana,
+            mes,
+            año,
+            tipoCurso:       titulo,
+            horaInicio1:     horaInicio,
+            horaFin1:        horaFin,
+            pausa:           "NO",
+            horaInicio2:     "",
+            horaFin2:        "",
+            horasTramo1:     horasTotal.toFixed(2),
+            horasTramo2:     "0",
+            horasTotal:      horasTotal.toFixed(2),
+            tipoPrecio:      tipoMatch.tipoPrecio === "total" ? "total" : "clase",
+            precioHora:      tipoMatch.precio,
+            precioTotal:     precioTotal.toFixed(2),
+            calendarEventId: evento.id,
+            notas:           "Importado desde Google Calendar",
+          });
+          importados++;
+        }
       }
 
-      // 6. Recargar datos
       await cargarDatos();
 
-      if (importados === 0 && ignorados === 0) {
-        setExito("✅ Sincronización completada. No hay eventos nuevos para importar.");
-      } else {
-        setExito(`✅ Sincronización completada. ${importados} sesión(es) importada(s).${ignorados > 0 ? ` ${ignorados} evento(s) futuro(s) pendiente(s).` : ""}`);
-      }
+      const partes = [];
+      if (importados   > 0) partes.push(`${importados} sesión(es) importada(s)`);
+      if (actualizados > 0) partes.push(`${actualizados} sesión(es) actualizada(s)`);
+      if (ignorados    > 0) partes.push(`${ignorados} evento(s) futuro(s) pendiente(s)`);
+
+      setExito(`✅ Sincronización completada. ${partes.length > 0 ? partes.join(", ") + "." : "No hay cambios nuevos."}`);
 
     } catch (e) {
       setError("Error al sincronizar: " + e.message);
@@ -150,19 +177,19 @@ function Dashboard() {
 
   const suma = (lista, campo) => lista.reduce((acc, s) => acc + (parseFloat(s[campo]) || 0), 0);
 
-  const filtrarSemana  = s => parseInt(s.semana) === semanaHoy && parseInt(s.año) === añoHoy;
-  const filtrarMes     = s => parseInt(s.mes) === mesHoy && parseInt(s.año) === añoHoy;
-  const filtrarAño     = s => parseInt(s.año) === añoHoy;
-  const filtrarPagosAño = p => parseInt(p.año) === añoHoy;
+  const filtrarSemana   = s => parseInt(s.semana) === semanaHoy && parseInt(s.año) === añoHoy;
+  const filtrarMes      = s => parseInt(s.mes)    === mesHoy    && parseInt(s.año) === añoHoy;
+  const filtrarAño      = s => parseInt(s.año)    === añoHoy;
+  const filtrarPagosAño = p => parseInt(p.año)    === añoHoy;
 
-  const horasSemana   = suma(sesiones.filter(filtrarSemana), "horasTotal");
-  const precioSemana  = suma(sesiones.filter(filtrarSemana), "precioTotal");
-  const horasMes      = suma(sesiones.filter(filtrarMes), "horasTotal");
-  const precioMes     = suma(sesiones.filter(filtrarMes), "precioTotal");
-  const horasAño      = suma(sesiones.filter(filtrarAño), "horasTotal");
-  const totalAño      = suma(sesiones.filter(filtrarAño), "precioTotal");
-  const cobradoAño    = suma(pagos.filter(filtrarPagosAño), "importe");
-  const pendienteAño  = totalAño - cobradoAño;
+  const horasSemana  = suma(sesiones.filter(filtrarSemana),   "horasTotal");
+  const precioSemana = suma(sesiones.filter(filtrarSemana),   "precioTotal");
+  const horasMes     = suma(sesiones.filter(filtrarMes),      "horasTotal");
+  const precioMes    = suma(sesiones.filter(filtrarMes),      "precioTotal");
+  const horasAño     = suma(sesiones.filter(filtrarAño),      "horasTotal");
+  const totalAño     = suma(sesiones.filter(filtrarAño),      "precioTotal");
+  const cobradoAño   = suma(pagos.filter(filtrarPagosAño),    "importe");
+  const pendienteAño = totalAño - cobradoAño;
 
   const ultimasSesiones = [...sesiones]
     .sort((a, b) => b.fecha.localeCompare(a.fecha))
@@ -177,7 +204,7 @@ function Dashboard() {
     <div>
       <div className="page-header">
         <h1>📊 Panel de control</h1>
-        <div style={{ display:"flex", gap:"8px" }}>
+        <div style={{ display:"flex", gap:"8px", flexWrap:"wrap" }}>
           <button className="btn btn-outline" onClick={cargarDatos}>🔄 Actualizar</button>
           <button
             className="btn btn-primary"
@@ -194,7 +221,7 @@ function Dashboard() {
       {error && <div className="alerta alerta-error">{error}</div>}
       {exito && <div className="alerta alerta-success">{exito}</div>}
 
-      {/* ── Semana actual ─────────────────────────────────── */}
+      {/* Semana */}
       <div className="card">
         <div className="card-title">📅 Semana actual (semana {semanaHoy})</div>
         <div className="stats-grid">
@@ -211,7 +238,7 @@ function Dashboard() {
         </div>
       </div>
 
-      {/* ── Mes actual ────────────────────────────────────── */}
+      {/* Mes */}
       <div className="card">
         <div className="card-title">🗓️ Mes actual</div>
         <div className="stats-grid">
@@ -228,7 +255,7 @@ function Dashboard() {
         </div>
       </div>
 
-      {/* ── Año actual ────────────────────────────────────── */}
+      {/* Año */}
       <div className="card">
         <div className="card-title">📆 Año {añoHoy} — Contabilidad</div>
         <div className="stats-grid">
@@ -255,7 +282,7 @@ function Dashboard() {
         </div>
       </div>
 
-      {/* ── Últimas sesiones ──────────────────────────────── */}
+      {/* Últimas sesiones */}
       <div className="card">
         <div className="card-title">🕐 Últimas sesiones</div>
         {ultimasSesiones.length === 0 ? (
@@ -266,9 +293,7 @@ function Dashboard() {
           <div className="tabla-container">
             <table>
               <thead>
-                <tr>
-                  <th>Fecha</th><th>Tipo</th><th>Horas</th><th>Importe</th>
-                </tr>
+                <tr><th>Fecha</th><th>Tipo</th><th>Horas</th><th>Importe</th></tr>
               </thead>
               <tbody>
                 {ultimasSesiones.map((s, i) => (
