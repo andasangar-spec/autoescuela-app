@@ -160,24 +160,14 @@ export async function getPagos() {
 // ── Guardar sesión ───────────────────────────────────────────
 export async function guardarSesion(sesion) {
   return añadirFila("SESIONES", [
-    sesion.id,
-    sesion.fecha,
-    sesion.diaSemana,
-    sesion.semana,
-    sesion.mes,
-    sesion.año,
-    sesion.tipoCurso,
-    sesion.horaInicio1,
-    sesion.horaFin1,
-    sesion.pausa,
-    sesion.horaInicio2  || "",
+    sesion.id,          sesion.fecha,        sesion.diaSemana,
+    sesion.semana,      sesion.mes,          sesion.año,
+    sesion.tipoCurso,   sesion.horaInicio1,  sesion.horaFin1,
+    sesion.pausa,       sesion.horaInicio2  || "",
     sesion.horaFin2     || "",
-    sesion.horasTramo1,
-    sesion.horasTramo2  || 0,
-    sesion.horasTotal,
-    sesion.tipoPrecio,
-    sesion.precioHora,
-    sesion.precioTotal,
+    sesion.horasTramo1, sesion.horasTramo2  || 0,
+    sesion.horasTotal,  sesion.tipoPrecio,
+    sesion.precioHora,  sesion.precioTotal,
     sesion.calendarEventId || "",
     sesion.notas           || "",
   ]);
@@ -187,24 +177,14 @@ export async function guardarSesion(sesion) {
 export async function actualizarSesion(sesion) {
   const fila = sesion._fila;
   return escribirRango("SESIONES", `A${fila}:T${fila}`, [[
-    sesion.id,
-    sesion.fecha,
-    sesion.diaSemana,
-    sesion.semana,
-    sesion.mes,
-    sesion.año,
-    sesion.tipoCurso,
-    sesion.horaInicio1,
-    sesion.horaFin1,
-    sesion.pausa,
-    sesion.horaInicio2  || "",
+    sesion.id,          sesion.fecha,        sesion.diaSemana,
+    sesion.semana,      sesion.mes,          sesion.año,
+    sesion.tipoCurso,   sesion.horaInicio1,  sesion.horaFin1,
+    sesion.pausa,       sesion.horaInicio2  || "",
     sesion.horaFin2     || "",
-    sesion.horasTramo1,
-    sesion.horasTramo2  || 0,
-    sesion.horasTotal,
-    sesion.tipoPrecio,
-    sesion.precioHora,
-    sesion.precioTotal,
+    sesion.horasTramo1, sesion.horasTramo2  || 0,
+    sesion.horasTotal,  sesion.tipoPrecio,
+    sesion.precioHora,  sesion.precioTotal,
     sesion.calendarEventId || "",
     sesion.notas           || "",
   ]]);
@@ -213,13 +193,8 @@ export async function actualizarSesion(sesion) {
 // ── Guardar pago ─────────────────────────────────────────────
 export async function guardarPago(pago) {
   return añadirFila("PAGOS", [
-    pago.id,
-    pago.fecha,
-    pago.mes,
-    pago.año,
-    pago.importe,
-    pago.concepto,
-    pago.notas || "",
+    pago.id, pago.fecha, pago.mes, pago.año,
+    pago.importe, pago.concepto, pago.notas || "",
   ]);
 }
 
@@ -227,25 +202,18 @@ export async function guardarPago(pago) {
 export async function actualizarPago(pago) {
   const fila = pago._fila;
   return escribirRango("PAGOS", `A${fila}:G${fila}`, [[
-    pago.id,
-    pago.fecha,
-    pago.mes,
-    pago.año,
-    pago.importe,
-    pago.concepto,
-    pago.notas || "",
+    pago.id, pago.fecha, pago.mes, pago.año,
+    pago.importe, pago.concepto, pago.notas || "",
   ]]);
 }
 
 // ── Crear evento en Control_Contable ─────────────────────────
 export async function crearEventoCalendar({ titulo, fecha, horaInicio, horaFin, color, descripcion }) {
   const colorMap = {
-    "#4285F4": "1", "#EA4335": "11", "#FBBC04": "5",
-    "#34A853": "2", "#FF6D00": "6",  "#46BDC6": "7",
-    "#7B61FF": "9", "#E91E63": "4",  "#795548": "8",
+    "#4285F4":"1","#EA4335":"11","#FBBC04":"5",
+    "#34A853":"2","#FF6D00":"6", "#46BDC6":"7",
+    "#7B61FF":"9","#E91E63":"4", "#795548":"8",
   };
-
-  // Obtener ID del calendario Control_Contable
   const calendarId = await getCalendarControlContable();
   if (!calendarId) throw new Error("No se encontró el calendario Control_Contable");
 
@@ -259,13 +227,41 @@ export async function crearEventoCalendar({ titulo, fecha, horaInicio, horaFin, 
 
   const res = await fetch(
     `${BASE_CALENDAR}/calendars/${encodeURIComponent(calendarId)}/events`,
-    {
-      method: "POST",
-      headers: headers(),
-      body: JSON.stringify(evento),
-    }
+    { method: "POST", headers: headers(), body: JSON.stringify(evento) }
   );
   if (!res.ok) throw new Error("Error creando evento en Control_Contable");
+  const data = await res.json();
+  return data.id;
+}
+
+// ── Actualizar evento existente en Control_Contable ──────────
+export async function actualizarEventoCalendar({ eventId, titulo, fecha, horaInicio, horaFin, color, descripcion }) {
+  const colorMap = {
+    "#4285F4":"1","#EA4335":"11","#FBBC04":"5",
+    "#34A853":"2","#FF6D00":"6", "#46BDC6":"7",
+    "#7B61FF":"9","#E91E63":"4", "#795548":"8",
+  };
+  const calendarId = await getCalendarControlContable();
+  if (!calendarId) throw new Error("No se encontró el calendario Control_Contable");
+
+  const evento = {
+    summary:     titulo,
+    description: descripcion || "",
+    start: { dateTime: `${fecha}T${horaInicio}:00`, timeZone: "Europe/Madrid" },
+    end:   { dateTime: `${fecha}T${horaFin}:00`,    timeZone: "Europe/Madrid" },
+    colorId: colorMap[color?.toUpperCase()] || "1",
+  };
+
+  const res = await fetch(
+    `${BASE_CALENDAR}/calendars/${encodeURIComponent(calendarId)}/events/${eventId}`,
+    { method: "PUT", headers: headers(), body: JSON.stringify(evento) }
+  );
+
+  // Si el evento no existe (fue eliminado en Calendar), crear uno nuevo
+  if (res.status === 404) {
+    return crearEventoCalendar({ titulo, fecha, horaInicio, horaFin, color, descripcion });
+  }
+  if (!res.ok) throw new Error("Error actualizando evento en Calendar");
   const data = await res.json();
   return data.id;
 }
@@ -275,7 +271,6 @@ export async function eliminarEventoCalendar(eventId) {
   if (!eventId) return;
   const calendarId = await getCalendarControlContable();
   if (!calendarId) return;
-
   const ids = eventId.split(",").filter(Boolean);
   for (const id of ids) {
     try {
@@ -298,16 +293,6 @@ export async function getEventosCalendar(calendarId) {
   if (!res.ok) throw new Error("Error leyendo eventos de Calendar");
   const data = await res.json();
   return data.items || [];
-}
-
-// ── Obtener un evento concreto de Calendar ───────────────────
-export async function getEventoCalendar(calendarId, eventId) {
-  const res = await fetch(
-    `${BASE_CALENDAR}/calendars/${encodeURIComponent(calendarId)}/events/${eventId}`,
-    { headers: headers() }
-  );
-  if (!res.ok) return null;
-  return res.json();
 }
 
 // ── Generar ID único ─────────────────────────────────────────

@@ -2,17 +2,20 @@ import React, { useEffect, useState } from "react";
 import {
   getSesiones, getPagos, getTiposCurso,
   getCalendarControlContable, getEventosCalendar,
-  guardarSesion, actualizarSesion, generarId
+  guardarSesion, actualizarSesion, eliminarFila,
+  eliminarEventoCalendar, generarId
 } from "../services/googleApi";
 import { getWeek, getMonth, getYear, format, isAfter, startOfDay } from "date-fns";
 
 function Dashboard() {
-  const [sesiones, setSesiones]           = useState([]);
-  const [pagos, setPagos]                 = useState([]);
-  const [cargando, setCargando]           = useState(true);
-  const [error, setError]                 = useState("");
-  const [exito, setExito]                 = useState("");
-  const [sincronizando, setSincronizando] = useState(false);
+  const [sesiones, setSesiones]               = useState([]);
+  const [pagos, setPagos]                     = useState([]);
+  const [cargando, setCargando]               = useState(true);
+  const [error, setError]                     = useState("");
+  const [exito, setExito]                     = useState("");
+  const [sincronizando, setSincronizando]     = useState(false);
+  const [sesionesEliminadas, setSesionesEliminadas] = useState([]);
+  const [eliminando, setEliminando]           = useState(null);
 
   const hoy       = new Date();
   const semanaHoy = getWeek(hoy, { weekStartsOn: 1 });
@@ -34,12 +37,32 @@ function Dashboard() {
     }
   };
 
+  // ── Confirmar eliminación de sesión desde aviso ──────────
+  const confirmarEliminarSesion = async (sesion) => {
+    setEliminando(sesion.id);
+    try {
+      await eliminarFila("SESIONES", sesion._fila - 1);
+      setSesionesEliminadas(prev => prev.filter(s => s.id !== sesion.id));
+      setExito("✅ Sesión eliminada correctamente.");
+      await cargarDatos();
+    } catch (e) {
+      setError("Error al eliminar sesión: " + e.message);
+    } finally {
+      setEliminando(null);
+    }
+  };
+
+  const ignorarAviso = (sesionId) => {
+    setSesionesEliminadas(prev => prev.filter(s => s.id !== sesionId));
+  };
+
   // ── Sincronizar Calendar → App ───────────────────────────
   const sincronizarCalendar = async () => {
     setSincronizando(true);
     setError(""); setExito("");
+    setSesionesEliminadas([]);
     try {
-      const tipos = await getTiposCurso();
+      const tipos      = await getTiposCurso();
       const calendarId = await getCalendarControlContable();
       if (!calendarId) {
         setError("No se encontró el calendario 'Control_Contable'.");
@@ -50,7 +73,7 @@ function Dashboard() {
       const sesionesActuales = await getSesiones();
       const hoyInicio        = startOfDay(new Date());
 
-      // Mapa de eventId → sesión para detectar modificaciones
+      // Mapa eventId → sesión
       const mapaEventoSesion = {};
       sesionesActuales.forEach(s => {
         if (s.calendarEventId) {
@@ -60,10 +83,27 @@ function Dashboard() {
         }
       });
 
+      // IDs de eventos activos en Calendar
+      const idsEnCalendar = new Set(eventos.map(e => e.id));
+
       let importados   = 0;
       let actualizados = 0;
       let ignorados    = 0;
+      const eliminadasDetectadas = [];
 
+      // ── Detectar sesiones cuyo evento fue eliminado en Calendar ──
+      sesionesActuales.forEach(s => {
+        if (!s.calendarEventId) return;
+        // Solo sesiones importadas desde Calendar (id empieza por CAL)
+        if (!s.id.startsWith("CAL")) return;
+        const ids = s.calendarEventId.split(",").map(id => id.trim());
+        const todosEliminados = ids.every(id => !idsEnCalendar.has(id));
+        if (todosEliminados) {
+          eliminadasDetectadas.push(s);
+        }
+      });
+
+      // ── Procesar eventos de Calendar ─────────────────────────
       for (const evento of eventos) {
         const titulo      = evento.summary?.trim() || "";
         const fechaEvento = evento.start?.dateTime || evento.start?.date;
@@ -71,13 +111,11 @@ function Dashboard() {
 
         const fechaObj = new Date(fechaEvento);
 
-        // Solo eventos cuya fecha ya llegó
         if (isAfter(startOfDay(fechaObj), hoyInicio)) {
           ignorados++;
           continue;
         }
 
-        // Solo si el título coincide con un curso
         const tipoMatch = tipos.find(t => t.nombre === titulo);
         if (!tipoMatch) continue;
 
@@ -88,8 +126,8 @@ function Dashboard() {
           (new Date(evento.end?.dateTime   || evento.end?.date) -
            new Date(evento.start?.dateTime || evento.start?.date)) / 60000
         );
-        const numClases  = duracionMin > 0 ? Math.floor(minutosNetos / duracionMin) : 0;
-        const horasTotal = minutosNetos / 60;
+        const numClases   = duracionMin > 0 ? Math.floor(minutosNetos / duracionMin) : 0;
+        const horasTotal  = minutosNetos / 60;
         const precioTotal = tipoMatch.tipoPrecio === "total"
           ? tipoMatch.precio
           : numClases * tipoMatch.precio;
@@ -103,14 +141,12 @@ function Dashboard() {
         const sesionExistente = mapaEventoSesion[evento.id];
 
         if (sesionExistente) {
-          // ── Evento ya importado: comprobar si fue modificado ──
           const mismaHoraInicio = sesionExistente.horaInicio1 === horaInicio;
           const mismaHoraFin    = sesionExistente.horaFin1    === horaFin;
           const mismaFecha      = sesionExistente.fecha        === fechaFmt;
           const mismoTipo       = sesionExistente.tipoCurso    === titulo;
 
           if (!mismaHoraInicio || !mismaHoraFin || !mismaFecha || !mismoTipo) {
-            // Actualizar sesión en Sheets
             await actualizarSesion({
               ...sesionExistente,
               fecha:       fechaFmt,
@@ -132,7 +168,6 @@ function Dashboard() {
             actualizados++;
           }
         } else {
-          // ── Evento nuevo: importar ────────────────────────────
           await guardarSesion({
             id:              generarId("CAL"),
             fecha:           fechaFmt,
@@ -161,10 +196,15 @@ function Dashboard() {
 
       await cargarDatos();
 
+      if (eliminadasDetectadas.length > 0) {
+        setSesionesEliminadas(eliminadasDetectadas);
+      }
+
       const partes = [];
       if (importados   > 0) partes.push(`${importados} sesión(es) importada(s)`);
       if (actualizados > 0) partes.push(`${actualizados} sesión(es) actualizada(s)`);
       if (ignorados    > 0) partes.push(`${ignorados} evento(s) futuro(s) pendiente(s)`);
+      if (eliminadasDetectadas.length > 0) partes.push(`${eliminadasDetectadas.length} sesión(es) eliminada(s) en Calendar — revisa los avisos`);
 
       setExito(`✅ Sincronización completada. ${partes.length > 0 ? partes.join(", ") + "." : "No hay cambios nuevos."}`);
 
@@ -220,6 +260,48 @@ function Dashboard() {
 
       {error && <div className="alerta alerta-error">{error}</div>}
       {exito && <div className="alerta alerta-success">{exito}</div>}
+
+      {/* ── Avisos de sesiones eliminadas en Calendar ─────── */}
+      {sesionesEliminadas.length > 0 && (
+        <div className="card" style={{ border:"2px solid #ea4335" }}>
+          <div className="card-title" style={{ color:"#ea4335" }}>
+            ⚠️ Eventos eliminados en Google Calendar
+          </div>
+          <p style={{ fontSize:"13px", color:"#666", marginBottom:"16px" }}>
+            Los siguientes eventos fueron eliminados en Google Calendar.
+            ¿Quieres eliminar también las sesiones correspondientes en la app?
+          </p>
+          {sesionesEliminadas.map((s, i) => (
+            <div key={i} style={{
+              display:"flex", alignItems:"center", justifyContent:"space-between",
+              padding:"12px", background:"#fce8e6", borderRadius:"8px", marginBottom:"8px", gap:"12px"
+            }}>
+              <div style={{ fontSize:"14px" }}>
+                <strong>{s.fecha}</strong> — <span style={{ color:"#1a73e8" }}>{s.tipoCurso}</span>
+                <span style={{ color:"#666", marginLeft:"8px" }}>{s.horaInicio1}–{s.horaFin1}</span>
+                <span style={{ color:"#34a853", marginLeft:"8px", fontWeight:"600" }}>{parseFloat(s.precioTotal).toFixed(2)} €</span>
+              </div>
+              <div style={{ display:"flex", gap:"8px", flexShrink:0 }}>
+                <button
+                  className="btn btn-outline"
+                  style={{ padding:"6px 12px", fontSize:"12px" }}
+                  onClick={() => ignorarAviso(s.id)}>
+                  Ignorar
+                </button>
+                <button
+                  className="btn btn-danger"
+                  style={{ padding:"6px 12px", fontSize:"12px", justifyContent:"center" }}
+                  disabled={eliminando === s.id}
+                  onClick={() => confirmarEliminarSesion(s)}>
+                  {eliminando === s.id
+                    ? <div className="spinner" style={{ width:"14px",height:"14px",borderWidth:"2px" }}></div>
+                    : "🗑️ Eliminar"}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Semana */}
       <div className="card">
