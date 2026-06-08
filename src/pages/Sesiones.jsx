@@ -190,7 +190,7 @@ export default function Sesiones() {
       if (idsExistentes.length > 0 && idsExistentes[0]) {
         eventId1 = await actualizarEventoCalendar({
           eventId:    idsExistentes[0],
-          titulo:     `🚗 ${formEdit.tipoCurso} (${numClasesEdit} clase(s))`,
+          tipoCurso:  formEdit.tipoCurso,
           fecha:      formEdit.fechaISO,
           horaInicio: formEdit.horaInicio1,
           horaFin:    horaFinT1,
@@ -199,7 +199,7 @@ export default function Sesiones() {
         });
       } else {
         eventId1 = await crearEventoCalendar({
-          titulo:     `🚗 ${formEdit.tipoCurso} (${numClasesEdit} clase(s))`,
+          tipoCurso:  formEdit.tipoCurso,
           fecha:      formEdit.fechaISO,
           horaInicio: formEdit.horaInicio1,
           horaFin:    horaFinT1,
@@ -213,7 +213,7 @@ export default function Sesiones() {
         if (idsExistentes.length > 1 && idsExistentes[1]) {
           eventId2 = await actualizarEventoCalendar({
             eventId:    idsExistentes[1],
-            titulo:     `🚗 ${formEdit.tipoCurso} (continuación)`,
+            tipoCurso:  formEdit.tipoCurso,
             fecha:      formEdit.fechaISO,
             horaInicio: formEdit.horaFin2,
             horaFin:    formEdit.horaFin1,
@@ -222,7 +222,7 @@ export default function Sesiones() {
           });
         } else {
           eventId2 = await crearEventoCalendar({
-            titulo:     `🚗 ${formEdit.tipoCurso} (continuación)`,
+            tipoCurso:  formEdit.tipoCurso,
             fecha:      formEdit.fechaISO,
             horaInicio: formEdit.horaFin2,
             horaFin:    formEdit.horaFin1,

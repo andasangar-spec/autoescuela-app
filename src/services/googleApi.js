@@ -208,7 +208,9 @@ export async function actualizarPago(pago) {
 }
 
 // ── Crear evento en Control_Contable ─────────────────────────
-export async function crearEventoCalendar({ titulo, fecha, horaInicio, horaFin, color, descripcion }) {
+// El título es SIEMPRE el nombre exacto del curso para que
+// la sincronización funcione en ambas direcciones
+export async function crearEventoCalendar({ tipoCurso, fecha, horaInicio, horaFin, color, descripcion }) {
   const colorMap = {
     "#4285F4":"1","#EA4335":"11","#FBBC04":"5",
     "#34A853":"2","#FF6D00":"6", "#46BDC6":"7",
@@ -218,7 +220,7 @@ export async function crearEventoCalendar({ titulo, fecha, horaInicio, horaFin, 
   if (!calendarId) throw new Error("No se encontró el calendario Control_Contable");
 
   const evento = {
-    summary:     titulo,
+    summary:     tipoCurso, // ← nombre exacto del curso
     description: descripcion || "",
     start: { dateTime: `${fecha}T${horaInicio}:00`, timeZone: "Europe/Madrid" },
     end:   { dateTime: `${fecha}T${horaFin}:00`,    timeZone: "Europe/Madrid" },
@@ -235,7 +237,7 @@ export async function crearEventoCalendar({ titulo, fecha, horaInicio, horaFin, 
 }
 
 // ── Actualizar evento existente en Control_Contable ──────────
-export async function actualizarEventoCalendar({ eventId, titulo, fecha, horaInicio, horaFin, color, descripcion }) {
+export async function actualizarEventoCalendar({ eventId, tipoCurso, fecha, horaInicio, horaFin, color, descripcion }) {
   const colorMap = {
     "#4285F4":"1","#EA4335":"11","#FBBC04":"5",
     "#34A853":"2","#FF6D00":"6", "#46BDC6":"7",
@@ -245,7 +247,7 @@ export async function actualizarEventoCalendar({ eventId, titulo, fecha, horaIni
   if (!calendarId) throw new Error("No se encontró el calendario Control_Contable");
 
   const evento = {
-    summary:     titulo,
+    summary:     tipoCurso, // ← nombre exacto del curso
     description: descripcion || "",
     start: { dateTime: `${fecha}T${horaInicio}:00`, timeZone: "Europe/Madrid" },
     end:   { dateTime: `${fecha}T${horaFin}:00`,    timeZone: "Europe/Madrid" },
@@ -257,9 +259,9 @@ export async function actualizarEventoCalendar({ eventId, titulo, fecha, horaIni
     { method: "PUT", headers: headers(), body: JSON.stringify(evento) }
   );
 
-  // Si el evento no existe (fue eliminado en Calendar), crear uno nuevo
+  // Si el evento no existe, crear uno nuevo
   if (res.status === 404) {
-    return crearEventoCalendar({ titulo, fecha, horaInicio, horaFin, color, descripcion });
+    return crearEventoCalendar({ tipoCurso, fecha, horaInicio, horaFin, color, descripcion });
   }
   if (!res.ok) throw new Error("Error actualizando evento en Calendar");
   const data = await res.json();

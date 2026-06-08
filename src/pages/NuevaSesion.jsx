@@ -157,7 +157,7 @@ function NuevaSesion() {
       const descripcion = `${form.tipoCurso} | ${numClases} clase(s) × ${duracionMin}min | ${horasTotal.toFixed(2)}h | ${precioTotal.toFixed(2)}€`;
 
       const eventId1 = await crearEventoCalendar({
-        titulo:     `🚗 ${form.tipoCurso} (${numClases} clase(s))`,
+        tipoCurso:  form.tipoCurso,
         fecha:      form.fecha,
         horaInicio: form.horaInicio,
         horaFin:    hasPausa ? form.pausaInicio : form.horaFin,
@@ -168,7 +168,7 @@ function NuevaSesion() {
       let eventId2 = "";
       if (hasPausa && horasTramo2 > 0) {
         eventId2 = await crearEventoCalendar({
-          titulo:     `🚗 ${form.tipoCurso} (continuación)`,
+          tipoCurso:  form.tipoCurso,
           fecha:      form.fecha,
           horaInicio: form.pausaFin,
           horaFin:    form.horaFin,
