@@ -1,19 +1,20 @@
 {
   "files": {
     "main.css": "/autoescuela-app/static/css/main.bc4f81c3.css",
-    "main.js": "/autoescuela-app/static/js/main.cc33093a.js",
+    "main.js": "/autoescuela-app/static/js/main.a5863c1b.js",
     "static/js/239.01c4cb84.chunk.js": "/autoescuela-app/static/js/239.01c4cb84.chunk.js",
     "static/js/977.873dddc4.chunk.js": "/autoescuela-app/static/js/977.873dddc4.chunk.js",
     "static/js/455.6db4d60b.chunk.js": "/autoescuela-app/static/js/455.6db4d60b.chunk.js",
+    "static/media/logo.png": "/autoescuela-app/static/media/logo.906441540f9761e8c27b.png",
     "index.html": "/autoescuela-app/index.html",
     "main.bc4f81c3.css.map": "/autoescuela-app/static/css/main.bc4f81c3.css.map",
-    "main.cc33093a.js.map": "/autoescuela-app/static/js/main.cc33093a.js.map",
+    "main.a5863c1b.js.map": "/autoescuela-app/static/js/main.a5863c1b.js.map",
     "239.01c4cb84.chunk.js.map": "/autoescuela-app/static/js/239.01c4cb84.chunk.js.map",
     "977.873dddc4.chunk.js.map": "/autoescuela-app/static/js/977.873dddc4.chunk.js.map",
     "455.6db4d60b.chunk.js.map": "/autoescuela-app/static/js/455.6db4d60b.chunk.js.map"
   },
   "entrypoints": [
     "static/css/main.bc4f81c3.css",
-    "static/js/main.cc33093a.js"
+    "static/js/main.a5863c1b.js"
   ]
 }
