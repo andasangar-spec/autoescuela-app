@@ -100,8 +100,9 @@ function Dashboard() {
       const eliminadasDetectadas  = [];
 
       sesionesActuales.forEach(s => {
-        if (!s.calendarEventId || !s.id.startsWith("CAL")) return;
-        const ids             = s.calendarEventId.split(",").map(id => id.trim());
+        if (!s.calendarEventId) return;
+        const ids             = s.calendarEventId.split(",").map(id => id.trim()).filter(Boolean);
+        if (ids.length === 0) return;
         const todosEliminados = ids.every(id => !idsEnCalendar.has(id));
         if (todosEliminados) eliminadasDetectadas.push(s);
       });
