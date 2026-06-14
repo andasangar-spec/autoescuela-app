@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { leerRango, escribirRango } from "../services/googleApi";
 
 function Configuracion() {
+  const navigate                    = useNavigate();
   const [tipos, setTipos]           = useState([]);
   const [cargando, setCargando]     = useState(true);
   const [guardando, setGuardando]   = useState(false);
@@ -36,9 +38,7 @@ function Configuracion() {
   };
 
   const handleCambio = (idx, campo, valor) => {
-    setTipos(prev => prev.map((t, i) =>
-      i === idx ? { ...t, [campo]: valor } : t
-    ));
+    setTipos(prev => prev.map((t, i) => i === idx ? { ...t, [campo]: valor } : t));
     setHayCambios(true);
   };
 
@@ -53,17 +53,13 @@ function Configuracion() {
         if (isNaN(dur) || dur < 1)
           return setError(`Duración inválida en "${t.nombre}"`);
       }
-
       const filas = tipos.map(t => [
-        t.id,
-        t.nombre,
-        t.tipoPrecio,
+        t.id, t.nombre, t.tipoPrecio,
         parseFloat(t.precio).toString(),
         t.colorCalendar,
         t.activo ? "SI" : "NO",
         parseInt(t.duracionMin).toString(),
       ]);
-
       await escribirRango("TIPOS_CURSO", `A2:G${filas.length + 1}`, filas);
       setExito("✅ Configuración guardada correctamente en Google Sheets");
       setHayCambios(false);
@@ -74,149 +70,166 @@ function Configuracion() {
     }
   };
 
-  if (cargando) return <div className="loading"><div className="spinner"></div> Cargando configuración...</div>;
+  if (cargando) return (
+    <>
+      <div className="inner-bar">
+        <button className="back-btn" onClick={() => navigate("/")}>
+          <svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+        </button>
+        <span className="inner-bar-title">Configuración</span>
+      </div>
+      <div className="loading"><div className="spinner"></div> Cargando configuración...</div>
+    </>
+  );
 
   return (
-    <div>
-      <div className="page-header">
-        <h1>⚙️ Configuración</h1>
-        <button className="btn btn-outline" onClick={cargarTipos}>🔄 Recargar</button>
+    <>
+      {/* Barra superior con volver */}
+      <div className="inner-bar">
+        <button className="back-btn" onClick={() => navigate("/")}>
+          <svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+        </button>
+        <span className="inner-bar-title">Configuración</span>
+        <button className="inner-bar-action" onClick={cargarTipos}>🔄</button>
       </div>
 
-      {error && <div className="alerta alerta-error">{error}</div>}
-      {exito && <div className="alerta alerta-success">{exito}</div>}
+      {error       && <div className="alerta alerta-error">{error}</div>}
+      {exito       && <div className="alerta alerta-success">{exito}</div>}
+      {hayCambios  && <div className="alerta alerta-warn">⚠️ Tienes cambios sin guardar</div>}
 
-      {hayCambios && (
-        <div className="alerta" style={{ background:"#fff8e1", borderLeft:"4px solid #fbbc04", color:"#e65100" }}>
-          ⚠️ Tienes cambios sin guardar
-        </div>
-      )}
-
+      {/* Tabla tipos de curso — todas las columnas originales */}
       <div className="card">
-        <div className="card-title">📚 Tipos de curso / clase, precios y duración</div>
-        <p style={{ fontSize:"13px", color:"#666", marginBottom:"16px" }}>
-          Configura el precio por clase y la duración de cada clase. El importe se calculará automáticamente multiplicando el número de clases por el precio unitario.
-        </p>
-
-        <div style={{ overflowX:"auto" }}>
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Nombre del curso</th>
-                <th>Tipo precio</th>
-                <th>Precio por clase (€)</th>
-                <th>Duración clase (min)</th>
-                <th>Color Calendar</th>
-                <th>Activo</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tipos.map((tipo, idx) => (
-                <tr key={idx}>
-                  <td style={{ fontSize:"12px", color:"#999" }}>{tipo.id}</td>
-                  <td>
-                    <input
-                      type="text"
-                      value={tipo.nombre}
-                      onChange={e => handleCambio(idx, "nombre", e.target.value)}
-                      style={{ border:"1px solid #e0e0e0", borderRadius:"6px", padding:"6px 10px", width:"160px", fontSize:"14px" }}
-                    />
-                  </td>
-                  <td>
-                    <select
-                      value={tipo.tipoPrecio}
-                      onChange={e => handleCambio(idx, "tipoPrecio", e.target.value)}
-                      style={{ border:"1px solid #e0e0e0", borderRadius:"6px", padding:"6px 10px", fontSize:"14px" }}>
-                      <option value="clase">Por clase</option>
-                      <option value="total">Precio fijo total</option>
-                    </select>
-                  </td>
-                  <td>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={tipo.precio}
-                      onChange={e => handleCambio(idx, "precio", e.target.value)}
-                      style={{
-                        border: isNaN(parseFloat(tipo.precio)) ? "2px solid #ea4335" : "1px solid #e0e0e0",
-                        borderRadius:"6px", padding:"6px 10px", width:"90px", fontSize:"14px", fontWeight:"600"
-                      }}
-                    />
-                  </td>
-                  <td>
-                    <div style={{ display:"flex", alignItems:"center", gap:"6px" }}>
+        <div className="card-header">
+          <span className="card-title">📚 Tipos de curso · Precios · Duración</span>
+        </div>
+        <div className="card-body">
+          <p style={{ fontSize:"13px", color:"var(--g400)", marginBottom:"14px" }}>
+            Configura el precio por clase y la duración. El importe se calcula automáticamente multiplicando el número de clases por el precio unitario.
+          </p>
+          <div className="tabla-container">
+            <table className="config-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Nombre del curso</th>
+                  <th>Tipo precio</th>
+                  <th>Precio por clase (€)</th>
+                  <th>Duración clase (min)</th>
+                  <th>Color Calendar</th>
+                  <th>Activo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tipos.map((tipo, idx) => (
+                  <tr key={idx}>
+                    <td style={{ fontSize:"11px", color:"var(--g400)" }}>{tipo.id}</td>
+                    <td>
                       <input
                         type="text"
-                        inputMode="numeric"
-                        value={tipo.duracionMin}
-                        onChange={e => handleCambio(idx, "duracionMin", e.target.value)}
-                        style={{
-                          border: isNaN(parseInt(tipo.duracionMin)) ? "2px solid #ea4335" : "1px solid #e0e0e0",
-                          borderRadius:"6px", padding:"6px 10px", width:"70px", fontSize:"14px"
-                        }}
+                        className="config-input"
+                        value={tipo.nombre}
+                        onChange={e => handleCambio(idx, "nombre", e.target.value)}
+                        style={{ width:"150px" }}
                       />
-                      <span style={{ fontSize:"12px", color:"#666" }}>min</span>
-                    </div>
-                  </td>
-                  <td>
-                    <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
+                    </td>
+                    <td>
+                      <select
+                        className="config-select"
+                        value={tipo.tipoPrecio}
+                        onChange={e => handleCambio(idx, "tipoPrecio", e.target.value)}>
+                        <option value="clase">Por clase</option>
+                        <option value="total">Precio fijo total</option>
+                      </select>
+                    </td>
+                    <td>
                       <input
-                        type="color"
-                        value={tipo.colorCalendar}
-                        onChange={e => handleCambio(idx, "colorCalendar", e.target.value)}
-                        style={{ width:"36px", height:"32px", cursor:"pointer", border:"none" }}
+                        type="text"
+                        inputMode="decimal"
+                        className={`config-input ${isNaN(parseFloat(tipo.precio)) ? "error" : ""}`}
+                        value={tipo.precio}
+                        onChange={e => handleCambio(idx, "precio", e.target.value)}
+                        style={{ width:"80px", fontWeight:"600" }}
                       />
-                      <span style={{ fontSize:"12px", color:"#999" }}>{tipo.colorCalendar}</span>
-                    </div>
-                  </td>
-                  <td>
-                    <label style={{ display:"flex", alignItems:"center", gap:"6px", cursor:"pointer" }}>
-                      <input
-                        type="checkbox"
-                        checked={tipo.activo}
-                        onChange={e => handleCambio(idx, "activo", e.target.checked)}
-                        style={{ width:"16px", height:"16px" }}
-                      />
-                      {tipo.activo ? "✅" : "❌"}
-                    </label>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    </td>
+                    <td>
+                      <div style={{ display:"flex", alignItems:"center", gap:"6px" }}>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          className={`config-input ${isNaN(parseInt(tipo.duracionMin)) ? "error" : ""}`}
+                          value={tipo.duracionMin}
+                          onChange={e => handleCambio(idx, "duracionMin", e.target.value)}
+                          style={{ width:"60px" }}
+                        />
+                        <span style={{ fontSize:"12px", color:"var(--g400)" }}>min</span>
+                      </div>
+                    </td>
+                    <td>
+                      <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
+                        <input
+                          type="color"
+                          className="config-color"
+                          value={tipo.colorCalendar}
+                          onChange={e => handleCambio(idx, "colorCalendar", e.target.value)}
+                        />
+                        <span style={{ fontSize:"11px", color:"var(--g400)" }}>{tipo.colorCalendar}</span>
+                      </div>
+                    </td>
+                    <td>
+                      <label style={{ display:"flex", alignItems:"center", gap:"6px", cursor:"pointer" }}>
+                        <input
+                          type="checkbox"
+                          checked={tipo.activo}
+                          onChange={e => handleCambio(idx, "activo", e.target.checked)}
+                          style={{ width:"16px", height:"16px", accentColor:"var(--b500)" }}
+                        />
+                        <span style={{ fontSize:"13px" }}>{tipo.activo ? "✅" : "❌"}</span>
+                      </label>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
-        <div style={{ marginTop:"20px", display:"flex", gap:"12px" }}>
-          <button
-            className="btn btn-success"
-            onClick={guardarTodos}
-            disabled={guardando || !hayCambios}
-            style={{ flex:1, justifyContent:"center", padding:"14px", opacity: hayCambios ? 1 : 0.6 }}>
-            {guardando
-              ? <><div className="spinner" style={{ width:"18px",height:"18px",borderWidth:"2px" }}></div> Guardando...</>
-              : "💾 Guardar todos los cambios en Sheets"}
-          </button>
-          <button className="btn btn-outline" onClick={cargarTipos}>↩️ Descartar</button>
+          <div style={{ marginTop:"16px", display:"flex", gap:"10px" }}>
+            <button
+              className="btn btn-success"
+              style={{ flex:1, justifyContent:"center", opacity: hayCambios ? 1 : 0.6 }}
+              onClick={guardarTodos}
+              disabled={guardando || !hayCambios}>
+              {guardando
+                ? <><div className="spinner" style={{ width:"18px", height:"18px", borderWidth:"2px" }}></div> Guardando...</>
+                : "💾 Guardar todos los cambios en Sheets"}
+            </button>
+            <button className="btn btn-outline" onClick={cargarTipos}>↩️ Descartar</button>
+          </div>
         </div>
       </div>
 
+      {/* Info del sistema */}
       <div className="card">
-        <div className="card-title">ℹ️ Información del sistema</div>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"12px", fontSize:"13px" }}>
-          <div>
-            <strong>Google Sheet ID:</strong><br/>
-            <code style={{ fontSize:"11px", color:"#666", wordBreak:"break-all" }}>
-              1LHCwfVH39txuID55bSk9mRrpErdGAa9v0sRqTgI0_2A
-            </code>
-          </div>
-          <div>
-            <strong>Versión:</strong> 1.0.0<br/>
-            <strong>Zona horaria:</strong> Europe/Madrid
+        <div className="card-header"><span className="card-title">ℹ️ Información del sistema</span></div>
+        <div className="card-body">
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"14px", fontSize:"13px" }}>
+            <div>
+              <strong style={{ color:"var(--g800)" }}>Google Sheet ID:</strong>
+              <br/>
+              <code style={{ fontSize:"11px", color:"var(--g400)", wordBreak:"break-all" }}>
+                1LHCwfVH39txuID55bSk9mRrpErdGAa9v0sRqTgI0_2A
+              </code>
+            </div>
+            <div>
+              <strong style={{ color:"var(--g800)" }}>Versión:</strong>
+              <span style={{ color:"var(--g600)", marginLeft:"6px" }}>1.0.0</span>
+              <br/>
+              <strong style={{ color:"var(--g800)" }}>Zona horaria:</strong>
+              <span style={{ color:"var(--g600)", marginLeft:"6px" }}>Europe/Madrid</span>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 

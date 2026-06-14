@@ -1,13 +1,14 @@
 import React, { useState } from "react";
 import { HashRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { GoogleOAuthProvider } from "@react-oauth/google";
-import Login from "./pages/Login";
-import Dashboard from "./pages/Dashboard";
-import NuevaSesion from "./pages/NuevaSesion";
-import Sesiones from "./pages/Sesiones";
+import Login        from "./pages/Login";
+import Dashboard    from "./pages/Dashboard";
+import Panel        from "./pages/Panel";
+import NuevaSesion  from "./pages/NuevaSesion";
+import Sesiones     from "./pages/Sesiones";
 import Contabilidad from "./pages/Contabilidad";
 import Configuracion from "./pages/Configuracion";
-import Layout from "./components/Layout";
+import Layout       from "./components/Layout";
 import "./App.css";
 
 const GOOGLE_CLIENT_ID = "825744058140-2jc1m34ogvt40109pf2kt839pgnsj7u0.apps.googleusercontent.com";
@@ -33,11 +34,22 @@ function App() {
     <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
       <Router>
         <Routes>
-          <Route path="/login" element={usuario ? <Navigate to="/" replace /> : <Login onLogin={handleLogin} />} />
-          <Route path="/" element={usuario ? <Layout usuario={usuario} onLogout={handleLogout} /> : <Navigate to="/login" replace />}>
-            <Route index element={<Dashboard />} />
+          <Route
+            path="/login"
+            element={usuario ? <Navigate to="/" replace /> : <Login onLogin={handleLogin} />}
+          />
+          <Route
+            path="/"
+            element={
+              usuario
+                ? <Layout usuario={usuario} onLogout={handleLogout} />
+                : <Navigate to="/login" replace />
+            }
+          >
+            <Route index              element={<Dashboard />} />
+            <Route path="panel"       element={<Panel />} />
             <Route path="nueva-sesion" element={<NuevaSesion />} />
-            <Route path="sesiones" element={<Sesiones />} />
+            <Route path="sesiones"    element={<Sesiones />} />
             <Route path="contabilidad" element={<Contabilidad />} />
             <Route path="configuracion" element={<Configuracion />} />
           </Route>
